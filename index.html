@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CutFlow 自动快编</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">C</span><strong>CutFlow</strong><span class="tag">自动快编</span></div>
+    <div class="steps" aria-label="工作流程">
+      <span class="active">1 导入</span><i></i><span>2 校对</span><i></i><span>3 气口</span><i></i><span>4 导出</span>
+    </div>
+    <button id="exportButton" class="primary" disabled>导出 FCPXML</button>
+  </header>
+
+  <main id="emptyState" class="empty-state">
+    <div class="drop-zone" id="dropZone">
+      <div class="upload-icon">↥</div>
+      <h1>导入一段视频，开始自动快编</h1>
+      <p>视频只在本机处理 · 支持 MP4、MOV、WebM</p>
+      <label class="primary file-button">选择视频<input id="fileInput" type="file" accept="video/*" hidden></label>
+    </div>
+  </main>
+
+  <main id="workspace" class="workspace" hidden>
+    <section class="viewer-panel">
+      <div class="panel-head">
+        <div><span class="eyebrow">源监看</span><strong id="fileName">未命名视频</strong></div>
+        <span id="durationBadge" class="badge">00:00</span>
+      </div>
+      <div class="viewer"><video id="video" controls playsinline></video></div>
+      <div class="transport">
+        <button id="backButton" aria-label="后退五秒">−5s</button>
+        <button id="playButton" class="play" aria-label="播放或暂停">▶</button>
+        <button id="forwardButton" aria-label="前进五秒">+5s</button>
+        <span id="timecode">00:00:00 / 00:00:00</span>
+      </div>
+      <div class="timeline-card">
+        <div class="timeline-title"><span>音频波形与剪切点</span><span><b class="legend keep"></b>保留 <b class="legend cut"></b>删除</span></div>
+        <div id="waveform" class="waveform"></div>
+        <div id="clipTrack" class="clip-track"></div>
+      </div>
+    </section>
+
+    <aside class="review-panel">
+      <div class="review-head">
+        <div><span class="eyebrow">AI 文本剪辑</span><h2>逐条确认</h2></div>
+        <span id="progressBadge" class="progress-badge">0 / 0</span>
+      </div>
+      <div id="processing" class="processing">
+        <div class="spinner"></div><strong>正在分析音频…</strong><span>生成逐字字幕并寻找疑似口误</span>
+      </div>
+      <div id="reviewContent" hidden>
+        <div class="notice"><span>✦</span><p><strong>发现 <b id="issueCount">0</b> 处疑似口误</strong><br>播放上下文，然后决定是否删除。</p></div>
+        <div id="issueCard" class="issue-card"></div>
+        <div class="decision-row">
+          <button id="keepButton" class="decision keep-button">保留 <kbd>K</kbd></button>
+          <button id="deleteButton" class="decision delete-button">删除 <kbd>D</kbd></button>
+        </div>
+        <div class="breath-card">
+          <div><strong>自动删气口</strong><span>移除句间超过 0.45 秒的停顿</span></div>
+          <label class="switch"><input id="breathToggle" type="checkbox" checked><span></span></label>
+        </div>
+        <div class="transcript-head"><strong>完整字幕</strong><button id="addCaption">＋ 添加一句</button></div>
+        <div id="transcript" class="transcript"></div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

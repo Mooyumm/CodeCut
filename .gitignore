@@ -1,0 +1,12 @@
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local migration archives and diagnostic history
+migration_bundle/
+
+# Rebuildable release artifacts
+CutFlowMac/Release/*.zip
+CutFlowMac/Release/*.sha256
