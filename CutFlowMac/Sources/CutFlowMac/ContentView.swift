@@ -522,18 +522,28 @@ private struct TimelinePanel: View {
                 Spacer()
                 Text("\(preciseTimecode(timelineCurrentTime)) / \(preciseTimecode(timelineDuration))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }.padding(.horizontal, 12).frame(height: 38).background(.thinMaterial)
-            HStack(spacing: 9) {
-                Toggle("字幕", isOn: Binding(get: { model.burnSubtitles }, set: { model.setBurnSubtitles($0) })).toggleStyle(.switch).controlSize(.mini)
-                Stepper("\(Int(model.subtitleFontSize))", value: Binding(get: { model.subtitleFontSize }, set: { model.setSubtitleFontSize($0) }), in: 24...80, step: 2).frame(width: 78).controlSize(.mini).help("字幕字号")
-                Divider().frame(height: 18)
-                Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
-                Slider(value: $pointsPerSecond, in: 8...100).frame(width: 110).help("缩放时间轴")
-                Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
-                Spacer()
-                Picker("气口", selection: $model.breathMode) { ForEach(EditorModel.BreathMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.frame(width: 150).controlSize(.small)
-                Picker("去重", selection: $model.dedupeMode) { ForEach(EditorModel.DedupeMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.frame(width: 150).controlSize(.small)
-                Button("执行") { model.executeDedupe() }.buttonStyle(.borderedProminent).controlSize(.small).disabled(model.words.isEmpty)
-            }.padding(.horizontal, 12).frame(height: 34).background(.thinMaterial)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 9) {
+                    timelineDisplayControls.fixedSize()
+                    Spacer(minLength: 12)
+                    timelineAnalysisControls.fixedSize()
+                }
+
+                VStack(spacing: 5) {
+                    HStack(spacing: 9) {
+                        timelineDisplayControls.fixedSize()
+                        Spacer(minLength: 0)
+                    }
+                    HStack(spacing: 9) {
+                        Spacer(minLength: 0)
+                        timelineAnalysisControls.fixedSize()
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .background(.thinMaterial)
             Divider()
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) { timelineCanvas.padding(.vertical, 8) }
@@ -559,6 +569,42 @@ private struct TimelinePanel: View {
     private let audioClipColor = Color(red: 0.16, green: 0.45, blue: 0.36)
     private let subtitleClipColor = Color(red: 0.34, green: 0.43, blue: 0.52)
     private let selectedOutline = Color(red: 1.0, green: 0.72, blue: 0.16)
+
+    @ViewBuilder
+    private var timelineDisplayControls: some View {
+        Toggle("字幕", isOn: Binding(get: { model.burnSubtitles }, set: { model.setBurnSubtitles($0) }))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+        Stepper("\(Int(model.subtitleFontSize))", value: Binding(get: { model.subtitleFontSize }, set: { model.setSubtitleFontSize($0) }), in: 24...80, step: 2)
+            .frame(width: 78)
+            .controlSize(.mini)
+            .help("字幕字号")
+        Divider().frame(height: 18)
+        Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
+        Slider(value: $pointsPerSecond, in: 8...100)
+            .frame(width: 110)
+            .help("缩放时间轴")
+        Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var timelineAnalysisControls: some View {
+        Picker("气口", selection: Binding(get: { model.breathMode }, set: { model.breathMode = $0 })) {
+            ForEach(EditorModel.BreathMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .frame(width: 150)
+        .controlSize(.small)
+        Picker("去重", selection: Binding(get: { model.dedupeMode }, set: { model.dedupeMode = $0 })) {
+            ForEach(EditorModel.DedupeMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .frame(width: 150)
+        .controlSize(.small)
+        Button("执行") { model.executeDedupe() }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(model.words.isEmpty)
+    }
+
     private var timelineDuration: Double { max(0, model.outputDuration) }
     private var timelineCurrentTime: Double { TimelineEngine.outputTime(for: model.currentTime, deleted: model.deletedRanges) }
     private var canvasWidth: Double { max(760, labelWidth + timelineDuration * pointsPerSecond + 40) }
