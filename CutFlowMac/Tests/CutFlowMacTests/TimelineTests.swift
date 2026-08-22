@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import AppKit
 import Testing
+
 import WhisperKit
 @testable import CutFlowMac
 
@@ -111,7 +112,9 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     let edl = EditDecisionList(sourcePath: "/tmp/source.mov", sourceDuration: 8, frameRate: 25, deletedRanges: [.init(start: 2, end: 4)], keptRanges: [.init(start: 0, end: 2), .init(start: 4, end: 8)], words: [], suggestions: [], breaths: [])
     let text = TimelineExporter.cmx3600(edl, name: "测试")
     #expect(text.contains("TITLE: 测试"))
-    #expect(text.contains("AA/V"))
+    #expect(text.contains("001  AX       V     C"))
+    #expect(text.contains("002  AX       A     C"))
+    #expect(text.components(separatedBy: "00:00:04:00 00:00:08:00 00:00:02:00 00:00:06:00").count == 3)
     #expect(text.contains("00:00:04:00 00:00:08:00 00:00:02:00 00:00:06:00"))
     #expect(text.contains("* FROM CLIP NAME: source.mov"))
 }
@@ -488,6 +491,28 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(TimelineEngine.subtitleCues(words: shortPause).map(\.text) == ["理所当然的东西"])
 }
 
+@Test func subtitleCuesUseNaturalSpeechPausesInsteadOfFixedWidthWrapping() {
+    let phrases = ["没错啊镜头前面这个拿着相机走着红毯的人就是我", "事情还要从两天前开始说起", "那时我刚落地中山"]
+    var words: [TranscriptWord] = [], cursor = 0.0
+    for (phraseIndex, phrase) in phrases.enumerated() {
+        for character in phrase {
+            words.append(word(String(character), cursor, cursor + 0.1))
+            cursor += 0.1
+        }
+        if phraseIndex < phrases.count - 1 { cursor += 0.48 }
+    }
+    #expect(TimelineEngine.subtitleCues(words: words).map(\.text) == phrases)
+}
+
+@Test func refinementRejectsMechanicalBreakInsideAWord() {
+    let text = "没错啊镜头前面这个拿着相机走着红毯的人就是我事情还要从两天前开始说起"
+    let words = Array(text).enumerated().map { index, character in word(String(character), Double(index) * 0.1, Double(index + 1) * 0.1) }
+    let splitAt = text.firstRange(of: "天前")!.lowerBound
+    let offset = text.distance(from: text.startIndex, to: splitAt)
+    let refined = TimelineEngine.refinedSentenceBreaks([words[offset].id], in: words)
+    #expect(refined.isEmpty)
+}
+
 @Test func mimoSegmentationOnlyChangesLinesAndMapsThemBackToUUIDs() {
     let words = Array("所以，投影仪更有价值。").enumerated().map { index, value in word(String(value), Double(index), Double(index + 1)) }
     let result = TimelineEngine.applySegmentedArticle("所以，投影仪更有价值。\n", to: words)
@@ -710,6 +735,26 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(model.words.allSatisfy { !$0.isDeleted })
     #expect(model.suggestions.count == 1)
     #expect(model.suggestions.first?.state == .pending)
+}
+
+@MainActor @Test func repetitionRowDecisionOnlyAffectsThatVisibleCue() {
+    let first = word("第一行", 1, 2), second = word("第二行", 2, 3), retained = word("最终保留行", 8, 9)
+    let suggestion = EditSuggestion(type: .repetition, title: "重复", reason: "保留最后一遍", confidence: 0.9, wordIDs: [first.id, second.id], retainedWordIDs: [retained.id], start: 1, end: 3)
+    let model = EditorModel()
+    model.words = [first, second, retained]
+    model.suggestions = [suggestion]
+
+    model.decideRepetitionSegment(suggestion.id, wordIDs: [first.id], delete: true)
+    #expect(model.words[0].isDeleted)
+    #expect(!model.words[1].isDeleted)
+    #expect(!model.words[2].isDeleted)
+    #expect(model.suggestions[0].state == .pending)
+    #expect(model.suggestions[0].wordIDs == [second.id])
+
+    model.decideRepetitionSegment(suggestion.id, wordIDs: [second.id], delete: false)
+    #expect(!model.words[1].isDeleted)
+    #expect(!model.words[2].isDeleted)
+    #expect(model.suggestions[0].state == .kept)
 }
 
 @MainActor @Test func reviewCorrectionsRequireExplicitAcceptance() {

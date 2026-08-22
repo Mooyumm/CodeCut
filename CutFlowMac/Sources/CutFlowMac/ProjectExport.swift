@@ -251,11 +251,19 @@ enum TimelineExporter {
             return String(format: "%02d:%02d:%02d:%02d", frames / (fps * 3600), frames / (fps * 60) % 60, frames / fps % 60, frames % fps)
         }
         var recordCursor = 0.0
+        let clipName = URL(fileURLWithPath: edl.sourcePath).lastPathComponent
         let events = edl.keptRanges.enumerated().map { index, range -> String in
             defer { recordCursor += range.duration }
-            let number = String(format: "%03d", index + 1)
             let recordEnd = recordCursor + range.duration
-            return "\(number)  AX       AA/V  C        \(timecode(range.start)) \(timecode(range.end)) \(timecode(recordCursor)) \(timecode(recordEnd))\n* FROM CLIP NAME: \(URL(fileURLWithPath: edl.sourcePath).lastPathComponent)"
+            let videoNumber = String(format: "%03d", index * 2 + 1)
+            let audioNumber = String(format: "%03d", index * 2 + 2)
+            let timecodes = "\(timecode(range.start)) \(timecode(range.end)) \(timecode(recordCursor)) \(timecode(recordEnd))"
+            return """
+            \(videoNumber)  AX       V     C        \(timecodes)
+            * FROM CLIP NAME: \(clipName)
+            \(audioNumber)  AX       A     C        \(timecodes)
+            * FROM CLIP NAME: \(clipName)
+            """
         }.joined(separator: "\n")
         return "TITLE: \(name)\nFCM: NON-DROP FRAME\n\n\(events)\n"
     }

@@ -228,7 +228,13 @@ private struct SuggestionCard: View {
             HStack { Label(item.title, systemImage: "wand.and.stars").font(.subheadline.weight(.semibold)); Spacer(); Text("\(Int(item.confidence * 100))%").font(.caption).foregroundStyle(.secondary) }
             Text(item.reason).font(.caption).foregroundStyle(.secondary)
             Text(String(format: "%.2f–%.2f 秒", item.start, item.end)).font(.caption2).monospacedDigit()
-            HStack { Button("试听") { model.preview(.init(start: item.start, end: item.end)) }; Spacer(); Button("保留") { model.decide(item.id, delete: false) }; Button("删除") { model.decide(item.id, delete: true) }.buttonStyle(.borderedProminent).tint(.red) }
+            HStack {
+                Button("试听") { model.preview(.init(start: item.start, end: item.end)) }
+                Spacer()
+                Button(item.type == .repetition ? "保留两段" : "保留") { model.decide(item.id, delete: false) }
+                Button(item.type == .repetition ? "删除标记段" : "删除") { model.decide(item.id, delete: true) }
+                    .buttonStyle(.borderedProminent).tint(.red)
+            }
         }.cardStyle()
             .contentShape(Rectangle())
             .onTapGesture { model.focusSuggestion(item) }
@@ -393,10 +399,14 @@ private struct EditableCueRow: View {
                     proposedText.font(.system(size: 15)).frame(maxWidth: .infinity, alignment: .leading)
                     if let repetition {
                         Label("重复", systemImage: "arrow.trianglehead.2.clockwise.rotate.90").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
-                        Button(role: .destructive) { model.decide(repetition.id, delete: true) } label: {
+                        Button("保留") { model.decideRepetitionSegment(repetition.id, wordIDs: cue.wordIDs, delete: false) }
+                            .buttonStyle(.bordered).controlSize(.mini).help("只保留当前这条字幕")
+                        Button(role: .destructive) { model.decideRepetitionSegment(repetition.id, wordIDs: cue.wordIDs, delete: true) } label: {
                             Image(systemName: "trash").frame(width: 20, height: 18)
                         }
-                        .buttonStyle(.borderedProminent).tint(.red).controlSize(.mini).help("删除这条重复字幕并跳到下一条")
+                        .buttonStyle(.borderedProminent).tint(.red).controlSize(.mini).help("只删除当前这条字幕，不影响同组其他片段")
+                    } else if retained {
+                        Label("保留版本", systemImage: "checkmark.circle.fill").font(.caption2.weight(.semibold)).foregroundStyle(.mint)
                     }
                 }.contentShape(Rectangle())
                     .onTapGesture(count: 2) { guard !batchMode else { return }; text = cue.text; isEditing = true }

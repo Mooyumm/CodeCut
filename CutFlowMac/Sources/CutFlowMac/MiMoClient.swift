@@ -163,11 +163,12 @@ struct MiMoClient: Sendable {
         }
     }
 
-    func segmentArticle(_ article: String) async throws -> String {
+    func segmentArticle(_ article: String, reference: String = "") async throws -> String {
         var request = try authorizedRequest(path: "/chat/completions")
         let rule = """
         你是中文口播字幕断句器。你只能调整换行，严禁增加、删除或修改任何文字、空格和标点。
-        这是用于成片观看的字幕，不是语法分析。每条字幕至少 6 个有效字符，优先 12–26 字；语义必须完整，必要时可以稍长。
+        这是用于成片观看的字幕，不是语法分析。每条字幕至少 6 个有效字符，通常 10–24 字；语义完整比字数更重要，必要时可以稍长。
+        禁止按固定字数机械换行，禁止连续多行都卡在相同字数。应优先在完整句意、自然语气停顿、话题转换和重新起句处换行。
         不得切断词语、主谓或动宾结构、介词结构、数字与单位、数量词、“的/地/得”结构、固定表达、品牌名或产品名。
         “这也是、就是、所以、但是、因为、而且、然后、但说实话”不能单独成行，必须与后面的完整意思放在一起。
         逗号只是候选分界，不是必须换行；逗号前后任一边过短或语义未完成时不得换行。句号、问号和感叹号通常是边界。顿号只表示并列，绝不能在顿号处分句。冒号不得拆开 3000:1 这类比例。
@@ -178,7 +179,15 @@ struct MiMoClient: Sendable {
         保留输入中所有重复、卡顿、语气词和 NG，因为你只负责断句。
         只返回 JSON：{"article":"只调整换行后的完整原文"}。
         """
-        request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "max_tokens": 8192, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": article]]]))
+        let referenceNote = reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : """
+
+        <reference>\(reference)</reference>
+        """
+        let input = """
+        请只为 <article> 内的实际识别稿调整换行。<reference> 只用于理解句意，返回结果不得包含标签或参考稿内容。
+        <article>\(article)</article>\(referenceNote)
+        """
+        request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "max_tokens": 8192, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": input]]]))
         var raw: String?
         for _ in 0..<(settings.provider == "deepseek" ? 2 : 1) {
             let response = try JSONDecoder().decode(ChatResponse.self, from: await MiMoHTTP.checkedData(for: request))

@@ -160,6 +160,7 @@ enum TimelineEngine {
         }
         let discourseFragments = ["这也是", "就是", "所以", "但是", "而且", "然后", "因为", "不过", "其实", "比如", "尤其是", "但说实话"]
         let dependentStarters = ["当", "如果", "因为", "所以", "但是", "不过", "而且", "其实", "比如", "对于", "在", "相比于", "但说实话", "除了", "尤其是", "只是", "有的人", "就会"]
+        let independentStarters = ["当", "如果", "因为", "所以", "但是", "不过", "而且", "然后", "后来", "其实", "比如", "对于", "虽然", "那", "这", "我", "我们", "他们", "最重要", "要知道", "自从"]
         let incompleteEnd = Set("的地得把被在和与或为让给用从对向是有一二三四五六七八九十百千万亿0123456789")
         let continuationStart = Set("个台块寸种些点层倍元万千百亿的地得了着过和与或0123456789")
         while true {
@@ -178,8 +179,22 @@ enum TimelineEngine {
                     let unfinished = text.count <= 12 && text.last.map(incompleteEnd.contains) == true
                     let continued = next.first.map(continuationStart.contains) == true
                     let source = words[segments[index]].map(\.text).joined()
+                    let boundaryIndex = segments[index + 1].lowerBound
+                    let previousWord = words[words.index(before: boundaryIndex)]
+                    let nextWord = words[boundaryIndex]
+                    let boundaryGap = nextWord.start - previousWord.end
+                    let previousCharacter = previousWord.text.last
+                    let nextCharacter = nextWord.text.first
+                    let brokenFunctionWord = boundaryGap < 0.35 && previousCharacter.map(incompleteEnd.contains) == true
+                    let splitASCIIWord = boundaryGap < 0.35
+                        && previousCharacter?.isASCII == true && previousCharacter?.isLetter == true
+                        && nextCharacter?.isASCII == true && (nextCharacter?.isLetter == true || nextCharacter?.isNumber == true)
+                    let looksLikeFixedWidthWrap = (24...30).contains(text.count)
+                        && boundaryGap < 0.32
+                        && !source.unicodeScalars.contains(where: CharacterSet(charactersIn: "。！？!?；;").contains)
+                        && !independentStarters.contains(where: next.hasPrefix)
                     let dependentClause = text.count <= 12 && (source.hasSuffix("，") || source.hasSuffix(",")) && dependentStarters.contains(where: text.hasPrefix)
-                    if leadingFragment || unfinished || continued || dependentClause {
+                    if leadingFragment || unfinished || continued || dependentClause || brokenFunctionWord || splitASCIIWord || looksLikeFixedWidthWrap {
                         boundaryToRemove = words[segments[index + 1].lowerBound].id
                         break
                     }
@@ -228,7 +243,7 @@ enum TimelineEngine {
         var cues: [SubtitleCue] = [], pending: [TranscriptWord] = []
         let terminal = CharacterSet(charactersIn: "。！？!?；;\n")
         let phraseBreak = CharacterSet(charactersIn: "，,：:")
-        let semanticStarters = ["当你", "当我", "当我们", "当大家", "如果", "因为", "所以", "但是", "不过", "而且", "然后", "后来", "其实", "比如", "对于", "与其", "虽然", "即使", "只要", "从来", "而是", "让一个", "让我", "让我们", "让它", "更多", "我是", "记得", "那我们", "以前", "吃饭", "价格", "还需要", "一打开", "在参数层面"]
+        let semanticStarters = ["事情", "那时", "就被", "在短暂", "当你", "当我", "当我们", "当大家", "如果", "因为", "所以", "但是", "不过", "而且", "然后", "后来", "其实", "比如", "对于", "与其", "虽然", "即使", "只要", "自从", "从来", "而是", "让一个", "让我", "让我们", "让它", "更多", "我是", "记得", "那我们", "要知道", "根本", "真是", "去之前", "这是", "行驶", "很多时候", "我们的计划", "我们抽到", "拍摄地点", "去到处", "我很", "这几年", "我也", "像这样", "能够", "最重要", "连拉链", "在背包", "外边", "内侧", "这两个", "值得", "除了", "他们家", "包的内侧", "下方", "但它", "雨伞", "下雨", "背起来", "一个兼顾", "就足够", "如果你", "记得", "以前", "吃饭", "价格", "还需要", "一打开", "在参数层面"]
         let connectorOnly = Set(["所以", "但是", "不过", "而且", "然后", "而是", "因为"])
         func joined(_ words: [TranscriptWord]) -> String {
             words.reduce(into: "") { text, word in
@@ -282,9 +297,39 @@ enum TimelineEngine {
             }
             return nil
         }
+        func safeFallbackBoundary() -> Int? {
+            let weakEnd = Set("的地得从在把被和与或为让给用对向是一两三四五六七八九十百千万亿0123456789")
+            let weakStart = Set("个台块寸种些点层倍元万千百亿的地得了着过和与或0123456789")
+            func isASCIIWord(_ character: Character?) -> Bool {
+                guard let scalar = character?.unicodeScalars.first, character?.unicodeScalars.count == 1 else { return false }
+                return CharacterSet.alphanumerics.contains(scalar) && scalar.value < 128
+            }
+            let options = pending.indices.dropFirst().filter { index in
+                let left = joined(Array(pending[..<index])), right = joined(Array(pending[index...]))
+                return left.count >= 8 && left.count <= maxCharacters && right.count >= 4
+            }
+            return options.min { lhs, rhs in
+                func score(_ index: Int) -> Double {
+                    let left = joined(Array(pending[..<index])), right = joined(Array(pending[index...]))
+                    var value = Double(abs(left.count - min(22, maxCharacters)))
+                    if left.last.map(weakEnd.contains) == true { value += 100 }
+                    if right.first.map(weakStart.contains) == true { value += 100 }
+                    if isASCIIWord(left.last), isASCIIWord(right.first) { value += 200 }
+                    if semanticStarters.contains(where: right.hasPrefix) { value -= 20 }
+                    value -= min(12, max(0, pending[index].start - pending[index - 1].end) * 20)
+                    return value
+                }
+                return score(lhs) < score(rhs)
+            }
+        }
         for word in words where !word.isDeleted {
             if breakBefore.contains(word.id) { flush() }
-            if let last = pending.last, word.start - last.end >= 0.9 { flush() }
+            if let last = pending.last {
+                let gap = word.start - last.end
+                let text = joined(pending)
+                let weakEnding = text.last.map { "的地得从在把被和与或一两三四五六七八九十百千万亿0123456789".contains($0) } == true
+                if gap >= 0.9 || (gap >= 0.45 && text.count >= 6 && !weakEnding) { flush() }
+            }
             pending.append(word)
             // Semantic clauses outrank visual length. Wait for at least two characters
             // on the new side so a one-character starter is not left by itself.
@@ -292,7 +337,7 @@ enum TimelineEngine {
             while pending.count > 1, joined(pending).count > maxCharacters + 2 || (pending.last!.end - pending.first!.start) > maxDuration {
                 if let natural = pending.dropLast().lastIndex(where: { contains($0, phraseBreak) }) {
                     flush(pending.distance(from: pending.startIndex, to: natural) + 1)
-                } else if let amount = semanticBoundary() ?? lexicalBoundary() {
+                } else if let amount = semanticBoundary() ?? lexicalBoundary() ?? safeFallbackBoundary() {
                     flush(amount)
                 } else {
                     var amount = 1
@@ -309,7 +354,7 @@ enum TimelineEngine {
         while pending.count > 1, joined(pending).count > maxCharacters || (pending.last!.end - pending.first!.start) > maxDuration {
             if let natural = pending.dropLast().lastIndex(where: { contains($0, phraseBreak) }) {
                 flush(pending.distance(from: pending.startIndex, to: natural) + 1)
-            } else if let amount = semanticBoundary() ?? lexicalBoundary() {
+            } else if let amount = semanticBoundary() ?? lexicalBoundary() ?? safeFallbackBoundary() {
                 flush(amount)
             } else {
                 var amount = 1
@@ -464,8 +509,8 @@ enum TimelineEngine {
         }
         let reference = normalized(manuscript)
         let ordered = candidates.sorted { $0.start == $1.start ? $0.text.count > $1.text.count : $0.start > $1.start }
-        var results: [EditSuggestion] = [], usedEarlierIDs: Set<UUID> = []
-        for candidate in ordered where Set(candidate.wordIDs).isDisjoint(with: usedEarlierIDs) {
+        var results: [EditSuggestion] = [], usedEarlierIDs: Set<UUID> = [], protectedRetainedIDs: Set<UUID> = []
+        for candidate in ordered where Set(candidate.wordIDs).isDisjoint(with: usedEarlierIDs.union(protectedRetainedIDs)) {
             let maxDistance = candidate.text.count <= 8 ? 10.0 : 60.0
             let nearbyLater = candidates.filter { $0.start >= candidate.end && $0.start - candidate.end <= maxDistance && Set($0.wordIDs).isDisjoint(with: usedEarlierIDs) }
             let scored = nearbyLater.compactMap { match -> (Candidate, Double, Bool)? in
@@ -481,6 +526,7 @@ enum TimelineEngine {
             guard let best = scored.max(by: { $0.1 < $1.1 }) else { continue }
             let match = best.0, score = best.1, referenceBacked = best.2
             usedEarlierIDs.formUnion(candidate.wordIDs)
+            protectedRetainedIDs.formUnion(match.wordIDs)
             let timestamp = String(format: "%02d:%04.1f", Int(match.start) / 60, match.start.truncatingRemainder(dividingBy: 60))
             let source = referenceBacked ? "，并已参考文字稿确认表达" : ""
             results.append(.init(type: .repetition, title: "重复句（保留最后一遍）", reason: "后面在 \(timestamp) 还有相同或相似表达\(source)，按口播规则保留最后一遍。", confidence: min(1, score), wordIDs: candidate.wordIDs, retainedWordIDs: match.wordIDs, start: candidate.start, end: candidate.end))
@@ -696,7 +742,7 @@ final class EditorModel {
         let activeWords = words.filter { !$0.isDeleted }
         let article = activeWords.map(\.text).joined()
         do {
-            let segmented = try await MiMoClient(settings: .current).segmentArticle(article)
+            let segmented = try await MiMoClient(settings: .current).segmentArticle(article, reference: manuscript)
             guard let result = TimelineEngine.applySegmentedArticle(segmented, to: words) else {
                 throw MiMoError.invalidResponse("\(service) 改变了原始文字，已拒绝该结果。")
             }
@@ -705,9 +751,11 @@ final class EditorModel {
             let proposed = result.breaks.union(TimelineEngine.mandatorySentenceBreaks(in: activeWords))
             let refined = TimelineEngine.refinedSentenceBreaks(proposed, in: activeWords)
             let semanticFallbacks = Set(TimelineEngine.subtitleCues(words: activeWords).dropFirst().compactMap(\.wordIDs.first))
-            let breaks = TimelineEngine.balancedSentenceBreaks(refined, candidates: proposed.union(semanticFallbacks), in: activeWords)
+            let breaks = TimelineEngine.balancedSentenceBreaks(refined, candidates: refined.union(semanticFallbacks), in: activeWords)
             subtitleBreaks = breaks
-            subtitleJoins = Set(activeWords.map(\.id)).subtracting(breaks)
+            // Model line breaks are semantic hints, not a command to suppress local
+            // pause, punctuation and word-boundary detection everywhere else.
+            subtitleJoins = []
             pendingReviewCorrections = [:]
             refreshBreaths()
             taskState = .done("\(service) 断句完成：\(subtitleCues.count) 条字幕，逐字 UUID 和时间戳未改变")
@@ -960,6 +1008,36 @@ final class EditorModel {
         }
         markChanged()
         if delete, type == .repetition { focusNextPendingRepetition(after: start) }
+    }
+
+    /// Resolve only the visible subtitle row that the user acted on. A repetition
+    /// suggestion may span several cues, so row actions must never apply the
+    /// suggestion's complete word-ID set.
+    func decideRepetitionSegment(_ id: UUID, wordIDs: [UUID], delete: Bool) {
+        guard let index = suggestions.firstIndex(where: { $0.id == id && $0.type == .repetition && $0.state == .pending }) else { return }
+        let visibleIDs = Set(wordIDs)
+        let decidedIDs = suggestions[index].wordIDs.filter(visibleIDs.contains)
+        guard !decidedIDs.isEmpty else { return }
+        checkpoint()
+        if delete {
+            let targets = Set(decidedIDs)
+            for wordIndex in words.indices where targets.contains(words[wordIndex].id) { words[wordIndex].isDeleted = true }
+            reconcileStoryboardsAfterEdit()
+        }
+        suggestions[index].wordIDs.removeAll { visibleIDs.contains($0) }
+        if suggestions[index].wordIDs.isEmpty {
+            suggestions[index].state = delete ? .deleted : .kept
+        } else {
+            let remaining = words.filter { suggestions[index].wordIDs.contains($0.id) }
+            if let first = remaining.first, let last = remaining.last {
+                suggestions[index].start = first.start
+                suggestions[index].end = last.end
+            }
+        }
+        let start = suggestions[index].start
+        let resolved = suggestions[index].state != .pending
+        markChanged()
+        if resolved { focusNextPendingRepetition(after: start) }
     }
 
     private func focusNextPendingRepetition(after start: Double) {
