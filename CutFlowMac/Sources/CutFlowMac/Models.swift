@@ -738,17 +738,12 @@ final class EditorModel {
         resegment()
         guard !words.isEmpty else { return }
         let service = MiMoSettings.current.serviceName
-        taskState = .working("\(service) 正在为完整字幕文章调整换行…")
+        taskState = .working("\(service) 正在选择自然断句位置…")
         let activeWords = words.filter { !$0.isDeleted }
-        let article = activeWords.map(\.text).joined()
         do {
-            let segmented = try await MiMoClient(settings: .current).segmentArticle(article, reference: manuscript)
-            guard let result = TimelineEngine.applySegmentedArticle(segmented, to: words) else {
-                throw MiMoError.invalidResponse("\(service) 改变了原始文字，已拒绝该结果。")
-            }
+            let modelBreaks = try await MiMoClient(settings: .current).segmentWordBoundaries(activeWords, reference: manuscript)
             checkpoint()
-            words = result.words
-            let proposed = result.breaks.union(TimelineEngine.mandatorySentenceBreaks(in: activeWords))
+            let proposed = modelBreaks.union(TimelineEngine.mandatorySentenceBreaks(in: activeWords))
             let refined = TimelineEngine.refinedSentenceBreaks(proposed, in: activeWords)
             let semanticFallbacks = Set(TimelineEngine.subtitleCues(words: activeWords).dropFirst().compactMap(\.wordIDs.first))
             let breaks = TimelineEngine.balancedSentenceBreaks(refined, candidates: refined.union(semanticFallbacks), in: activeWords)
@@ -758,8 +753,8 @@ final class EditorModel {
             subtitleJoins = []
             pendingReviewCorrections = [:]
             refreshBreaths()
-            taskState = .done("\(service) 断句完成：\(subtitleCues.count) 条字幕，逐字 UUID 和时间戳未改变")
-            messages.append(.init(role: .status, text: "\(service) 已只通过调整换行重新断句，原始文字和标点校验通过。"))
+            taskState = .done("\(service) 断句完成：\(subtitleCues.count) 条字幕，原文和时间戳未改变")
+            messages.append(.init(role: .status, text: "\(service) 已只返回换行序号，原始文字、标点、UUID 和时间戳均保持不变。"))
             markChanged()
         } catch {
             taskState = .failed("\(service) 断句失败：\(error.localizedDescription)。已保留本地断句结果。")

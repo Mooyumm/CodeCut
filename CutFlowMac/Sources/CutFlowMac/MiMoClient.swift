@@ -163,10 +163,12 @@ struct MiMoClient: Sendable {
         }
     }
 
-    func segmentArticle(_ article: String, reference: String = "") async throws -> String {
+    func segmentWordBoundaries(_ words: [TranscriptWord], reference: String = "") async throws -> Set<UUID> {
+        let activeWords = words.filter { !$0.isDeleted }
+        guard activeWords.count > 1 else { return [] }
         var request = try authorizedRequest(path: "/chat/completions")
         let rule = """
-        你是中文口播字幕断句器。你只能调整换行，严禁增加、删除或修改任何文字、空格和标点。
+        你是中文口播字幕断句器。输入是带有 [序号] 的逐词识别稿。你只能选择在哪个序号对应的词之前换行，严禁改写或复述原文。
         这是用于成片观看的字幕，不是语法分析。每条字幕至少 6 个有效字符，通常 10–24 字；语义完整比字数更重要，必要时可以稍长。
         禁止按固定字数机械换行，禁止连续多行都卡在相同字数。应优先在完整句意、自然语气停顿、话题转换和重新起句处换行。
         不得切断词语、主谓或动宾结构、介词结构、数字与单位、数量词、“的/地/得”结构、固定表达、品牌名或产品名。
@@ -177,43 +179,43 @@ struct MiMoClient: Sendable {
         错误示例：“就是花一，\n个容易接受的，\n价格。”
         正确示例：“就是花一，个容易接受的价格。”
         保留输入中所有重复、卡顿、语气词和 NG，因为你只负责断句。
-        只返回 JSON：{"article":"只调整换行后的完整原文"}。
+        不要返回原文。只返回 JSON：{"break_before":[12,35,58]}。数组值必须是输入中真实存在且大于 0 的序号，表示在该序号的词之前换行。
         """
+        let indexedArticle = activeWords.enumerated().map { "[\($0.offset)]\($0.element.text)" }.joined()
         let referenceNote = reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : """
 
         <reference>\(reference)</reference>
         """
         let input = """
-        请只为 <article> 内的实际识别稿调整换行。<reference> 只用于理解句意，返回结果不得包含标签或参考稿内容。
-        <article>\(article)</article>\(referenceNote)
+        请为 <article> 内的实际识别稿选择换行序号。<reference> 只用于理解句意，不得从参考稿复制文字。
+        <article>\(indexedArticle)</article>\(referenceNote)
         """
-        request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "max_tokens": 8192, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": input]]]))
-        var raw: String?
+        request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "max_tokens": 4096, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": input]]]))
+        var lastError: Error = MiMoError.invalidResponse("没有断句序号")
         for _ in 0..<(settings.provider == "deepseek" ? 2 : 1) {
             let response = try JSONDecoder().decode(ChatResponse.self, from: await MiMoHTTP.checkedData(for: request))
-            raw = response.choices.first?.message.content
-            if raw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false { break }
+            guard let raw = response.choices.first?.message.content,
+                  !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            do {
+                let indexes = try Self.parseSegmentationBreakIndexes(raw, wordCount: activeWords.count)
+                return Set(indexes.map { activeWords[$0].id })
+            } catch {
+                lastError = error
+            }
         }
-        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MiMoError.invalidResponse("没有断句内容") }
-        return try Self.parseSegmentedArticle(raw)
+        throw lastError
     }
 
-    static func parseSegmentedArticle(_ raw: String) throws -> String {
+    static func parseSegmentationBreakIndexes(_ raw: String, wordCount: Int) throws -> [Int] {
         let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if let payload = try? JSONDecoder().decode(SegmentationPayload.self, from: Data(cleaned.utf8)), !payload.article.isEmpty { return payload.article }
-        var repaired = "", inString = false, escaped = false
-        for character in cleaned {
-            if inString && !escaped {
-                if character == "\n" { repaired += "\\n"; continue }
-                if character == "\r" { repaired += "\\r"; continue }
-                if character == "\t" { repaired += "\\t"; continue }
-            }
-            repaired.append(character)
-            if character == "\"" && !escaped { inString.toggle() }
-            if character == "\\" && !escaped { escaped = true } else { escaped = false }
+        guard let payload = try? JSONDecoder().decode(SegmentationBreakPayload.self, from: Data(cleaned.utf8)) else {
+            throw MiMoError.invalidResponse("断句序号 JSON 不完整")
         }
-        guard let payload = try? JSONDecoder().decode(SegmentationPayload.self, from: Data(repaired.utf8)), !payload.article.isEmpty else { throw MiMoError.invalidResponse(cleaned) }
-        return payload.article
+        let indexes = Array(Set(payload.breakBefore)).sorted()
+        guard indexes.allSatisfy({ $0 > 0 && $0 < wordCount }) else {
+            throw MiMoError.invalidResponse("断句序号超出逐词稿范围")
+        }
+        return indexes
     }
 
     func correct(reference: String, words: [TranscriptWord]) async throws -> [UUID: String] {
@@ -336,7 +338,10 @@ struct MiMoClient: Sendable {
     private struct CorrectionResponse: Decodable { struct Choice: Decodable { struct Message: Decodable { let content: String }; let message: Message }; let choices: [Choice] }
     private struct CorrectionPayload: Decodable { struct Item: Decodable { let id, text: String }; let corrections: [Item] }
     private struct LineCorrectionPayload: Decodable { struct Item: Decodable { let id: Int; let text: String }; let lines: [Item] }
-    private struct SegmentationPayload: Decodable { let article: String }
+    private struct SegmentationBreakPayload: Decodable {
+        let breakBefore: [Int]
+        enum CodingKeys: String, CodingKey { case breakBefore = "break_before" }
+    }
     private struct StoryboardPayload: Decodable {
         struct Item: Decodable { let startIndex, endIndex: Int; let type, description, composition, movement, elements, notes: String }
         let items: [Item]

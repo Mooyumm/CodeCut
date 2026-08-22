@@ -527,6 +527,16 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(TimelineEngine.applySegmentedArticle("所以，\n电视更有价值。", to: words) == nil)
 }
 
+@Test func parsesSegmentationBreakIndexesWithoutAcceptingChangedText() throws {
+    #expect(try MiMoClient.parseSegmentationBreakIndexes(#"{"break_before":[5,2,5]}"#, wordCount: 8) == [2, 5])
+    #expect(throws: (any Error).self) {
+        try MiMoClient.parseSegmentationBreakIndexes(#"{"article":"被改写的原文"}"#, wordCount: 8)
+    }
+    #expect(throws: (any Error).self) {
+        try MiMoClient.parseSegmentationBreakIndexes(#"{"break_before":[0,8]}"#, wordCount: 8)
+    }
+}
+
 @Test func subtitleCuesNeverEmitBlankPunctuationRows() {
     let first = word("你好", 0, 1)
     let comma = word("，", 1, 1.1)
@@ -611,12 +621,13 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(settings.serviceName == "DeepSeek")
 }
 
-@Test func deepSeekSegmentationAcceptsLiteralNewlinesInsideJSONArticle() throws {
+@Test func deepSeekSegmentationAcceptsFencedBreakIndexJSON() throws {
     let raw = """
-    {"article":"第一句，
-    第二句。"}
+    ```json
+    {"break_before":[18,7,18]}
+    ```
     """
-    #expect(try MiMoClient.parseSegmentedArticle(raw) == "第一句，\n第二句。")
+    #expect(try MiMoClient.parseSegmentationBreakIndexes(raw, wordCount: 30) == [7, 18])
 }
 
 @MainActor @Test func deletingSubtitleDoesNotCutMediaAndCanUndo() {
