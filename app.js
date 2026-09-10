@@ -59,7 +59,7 @@ function renderTrack(){
 
 function exportXML(){
   const xml=makeFCPXML({name:state.file.name,sourceUrl:new URL(state.file.name,location.href).href,duration:state.duration,segments:state.segments,removeBreaths:state.removeBreaths})
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([xml],{type:'application/xml'}));a.download=`${state.file.name.replace(/\.[^.]+$/,'')}-CutFlow.fcpxml`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('FCPXML 已导出')
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([xml],{type:'application/xml'}));a.download=`${state.file.name.replace(/\.[^.]+$/,'')}-CodeCut.fcpxml`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('FCPXML 已导出')
 }
 
 let toastTimer

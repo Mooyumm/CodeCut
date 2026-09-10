@@ -19,7 +19,7 @@ export function makeFCPXML({name, sourceUrl, duration, segments, removeBreaths})
     `            <asset-clip name="${esc(segment.text || `片段 ${index + 1}`)}" ref="r2" offset="${frames(index ? normalizeSegments(segments, removeBreaths).slice(0,index).reduce((n,s)=>n+s.end-s.start,0) : 0)}" start="${frames(segment.start)}" duration="${frames(segment.end-segment.start)}"><marker start="0s" value="${esc(segment.text)}"/></asset-clip>`
   ).join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>
-<fcpxml version="1.10"><resources><format id="r1" name="FFVideoFormat1080p25" frameDuration="1/25s" width="1920" height="1080"/><asset id="r2" name="${esc(name)}" src="${esc(sourceUrl)}" start="0s" duration="${frames(duration)}" hasVideo="1" hasAudio="1" format="r1"/></resources><library><event name="CutFlow"><project name="${esc(name)} - 快编"><sequence format="r1" tcStart="0s" tcFormat="NDF"><spine>
+<fcpxml version="1.10"><resources><format id="r1" name="FFVideoFormat1080p25" frameDuration="1/25s" width="1920" height="1080"/><asset id="r2" name="${esc(name)}" src="${esc(sourceUrl)}" start="0s" duration="${frames(duration)}" hasVideo="1" hasAudio="1" format="r1"/></resources><library><event name="CodeCut"><project name="${esc(name)} - 快编"><sequence format="r1" tcStart="0s" tcFormat="NDF"><spine>
 ${clips}
           </spine></sequence></project></event></library></fcpxml>`
 }

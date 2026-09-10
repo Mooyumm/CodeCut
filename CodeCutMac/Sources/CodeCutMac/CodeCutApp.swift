@@ -3,13 +3,13 @@ import SwiftUI
 
 @main
 @MainActor
-final class CutFlowApp: NSObject, NSApplicationDelegate {
+final class CodeCutApp: NSObject, NSApplicationDelegate {
     private let model = EditorModel()
     private var mainWindow: NSWindow!
 
     static func main() {
         let app = NSApplication.shared
-        let delegate = CutFlowApp()
+        let delegate = CodeCutApp()
         app.delegate = delegate
         app.setActivationPolicy(.regular)
         app.run()
@@ -22,7 +22,7 @@ final class CutFlowApp: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "CutFlow"
+        window.title = "CodeCut"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: ContentView().environment(model).frame(minWidth: 1180, minHeight: 720))

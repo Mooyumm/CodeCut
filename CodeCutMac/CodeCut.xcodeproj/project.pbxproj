@@ -6,7 +6,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000000000000000000001 /* CutFlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* CutFlowApp.swift */; };
+		A10000000000000000000001 /* CodeCutApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* CodeCutApp.swift */; };
 		A10000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ContentView.swift */; };
 		A10000000000000000000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* Models.swift */; };
 		A10000000000000000000004 /* MiMoClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* MiMoClient.swift */; };
@@ -18,7 +18,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A20000000000000000000001 /* CutFlowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CutFlowApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000001 /* CodeCutApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeCutApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* MiMoClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiMoClient.swift; sourceTree = "<group>"; };
@@ -26,7 +26,7 @@
 		A20000000000000000000006 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* WhisperTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperTranscriber.swift; sourceTree = "<group>"; };
 		A20000000000000000000008 /* StoryboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryboardView.swift; sourceTree = "<group>"; };
-		A20000000000000000000010 /* CutFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CutFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000010 /* CodeCut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodeCut.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -34,22 +34,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A40000000000000000000001 = {isa = PBXGroup; children = (A40000000000000000000002 /* CutFlow */, A40000000000000000000003 /* Products */); sourceTree = "<group>"; };
-		A40000000000000000000002 /* CutFlow */ = {isa = PBXGroup; children = (A20000000000000000000001 /* CutFlowApp.swift */, A20000000000000000000002 /* ContentView.swift */, A20000000000000000000003 /* Models.swift */, A20000000000000000000004 /* MiMoClient.swift */, A20000000000000000000005 /* ProjectExport.swift */, A20000000000000000000006 /* SettingsView.swift */, A20000000000000000000007 /* WhisperTranscriber.swift */, A20000000000000000000008 /* StoryboardView.swift */); path = Sources/CutFlowMac; sourceTree = SOURCE_ROOT; };
-		A40000000000000000000003 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000010 /* CutFlow.app */); name = Products; sourceTree = "<group>"; };
+		A40000000000000000000001 = {isa = PBXGroup; children = (A40000000000000000000002 /* CodeCut */, A40000000000000000000003 /* Products */); sourceTree = "<group>"; };
+		A40000000000000000000002 /* CodeCut */ = {isa = PBXGroup; children = (A20000000000000000000001 /* CodeCutApp.swift */, A20000000000000000000002 /* ContentView.swift */, A20000000000000000000003 /* Models.swift */, A20000000000000000000004 /* MiMoClient.swift */, A20000000000000000000005 /* ProjectExport.swift */, A20000000000000000000006 /* SettingsView.swift */, A20000000000000000000007 /* WhisperTranscriber.swift */, A20000000000000000000008 /* StoryboardView.swift */); path = Sources/CodeCutMac; sourceTree = SOURCE_ROOT; };
+		A40000000000000000000003 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000010 /* CodeCut.app */); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A50000000000000000000001 /* CutFlow */ = {
+		A50000000000000000000001 /* CodeCut */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A80000000000000000000002 /* Build configuration list for PBXNativeTarget "CutFlow" */;
+			buildConfigurationList = A80000000000000000000002 /* Build configuration list for PBXNativeTarget "CodeCut" */;
 			buildPhases = (A60000000000000000000001 /* Sources */, A30000000000000000000001 /* Frameworks */, A60000000000000000000002 /* Resources */);
 			buildRules = ();
 			dependencies = ();
-			name = CutFlow;
+			name = CodeCut;
 			packageProductDependencies = (A11000000000000000000001 /* WhisperKit */);
-			productName = CutFlow;
-			productReference = A20000000000000000000010 /* CutFlow.app */;
+			productName = CodeCut;
+			productReference = A20000000000000000000010 /* CodeCut.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -58,7 +58,7 @@
 		A70000000000000000000001 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1650; LastUpgradeCheck = 1650; TargetAttributes = {A50000000000000000000001 = {CreatedOnToolsVersion = 16.0; }; }; };
-			buildConfigurationList = A80000000000000000000001 /* Build configuration list for PBXProject "CutFlow" */;
+			buildConfigurationList = A80000000000000000000001 /* Build configuration list for PBXProject "CodeCut" */;
 			compatibilityVersion = "Xcode 16.0";
 			developmentRegion = zh_CN;
 			hasScannedForEncodings = 0;
@@ -68,7 +68,7 @@
 			packageReferences = (A12000000000000000000001 /* XCLocalSwiftPackageReference "Vendor/argmax-oss-swift-1.1.0" */);
 			projectDirPath = "";
 			projectRoot = "";
-			targets = (A50000000000000000000001 /* CutFlow */);
+			targets = (A50000000000000000000001 /* CodeCut */);
 		};
 /* End PBXProject section */
 
@@ -77,7 +77,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A60000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* CutFlowApp.swift in Sources */, A10000000000000000000002 /* ContentView.swift in Sources */, A10000000000000000000003 /* Models.swift in Sources */, A10000000000000000000004 /* MiMoClient.swift in Sources */, A10000000000000000000005 /* ProjectExport.swift in Sources */, A10000000000000000000006 /* SettingsView.swift in Sources */, A10000000000000000000007 /* WhisperTranscriber.swift in Sources */, A10000000000000000000009 /* StoryboardView.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* CodeCutApp.swift in Sources */, A10000000000000000000002 /* ContentView.swift in Sources */, A10000000000000000000003 /* Models.swift in Sources */, A10000000000000000000004 /* MiMoClient.swift in Sources */, A10000000000000000000005 /* ProjectExport.swift in Sources */, A10000000000000000000006 /* SettingsView.swift in Sources */, A10000000000000000000007 /* WhisperTranscriber.swift in Sources */, A10000000000000000000009 /* StoryboardView.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -91,13 +91,13 @@
 /* Begin XCBuildConfiguration section */
 		A90000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx; SWIFT_VERSION = 6.0; }; name = Debug; };
 		A90000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_VERSION = 6.0; }; name = Release; };
-		A90000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = FAT97PKWDG; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = CutFlow; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video"; INFOPLIST_KEY_NSHumanReadableCopyright = ""; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks"); MARKETING_VERSION = 1.0.0; ONLY_ACTIVE_ARCH = YES; PRODUCT_BUNDLE_IDENTIFIER = com.mooyumm.cutflow; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_STRICT_CONCURRENCY = complete; }; name = Debug; };
-		A90000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = FAT97PKWDG; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = CutFlow; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video"; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks"); MARKETING_VERSION = 1.0.0; ONLY_ACTIVE_ARCH = YES; PRODUCT_BUNDLE_IDENTIFIER = com.mooyumm.cutflow; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_STRICT_CONCURRENCY = complete; }; name = Release; };
+		A90000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = FAT97PKWDG; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = CodeCut; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video"; INFOPLIST_KEY_NSHumanReadableCopyright = ""; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks"); MARKETING_VERSION = 1.0.0; ONLY_ACTIVE_ARCH = YES; PRODUCT_BUNDLE_IDENTIFIER = com.mooyumm.codecut; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_STRICT_CONCURRENCY = complete; }; name = Debug; };
+		A90000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = FAT97PKWDG; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = CodeCut; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video"; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks"); MARKETING_VERSION = 1.0.0; ONLY_ACTIVE_ARCH = YES; PRODUCT_BUNDLE_IDENTIFIER = com.mooyumm.codecut; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_STRICT_CONCURRENCY = complete; }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A80000000000000000000001 /* Build configuration list for PBXProject "CutFlow" */ = {isa = XCConfigurationList; buildConfigurations = (A90000000000000000000001 /* Debug */, A90000000000000000000002 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		A80000000000000000000002 /* Build configuration list for PBXNativeTarget "CutFlow" */ = {isa = XCConfigurationList; buildConfigurations = (A90000000000000000000003 /* Debug */, A90000000000000000000004 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A80000000000000000000001 /* Build configuration list for PBXProject "CodeCut" */ = {isa = XCConfigurationList; buildConfigurations = (A90000000000000000000001 /* Debug */, A90000000000000000000002 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A80000000000000000000002 /* Build configuration list for PBXNativeTarget "CodeCut" */ = {isa = XCConfigurationList; buildConfigurations = (A90000000000000000000003 /* Debug */, A90000000000000000000004 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
 	};

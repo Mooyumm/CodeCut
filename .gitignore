@@ -8,5 +8,5 @@ xcuserdata/
 migration_bundle/
 
 # Rebuildable release artifacts
-CutFlowMac/Release/*.zip
-CutFlowMac/Release/*.sha256
+CodeCutMac/Release/*.zip
+CodeCutMac/Release/*.sha256

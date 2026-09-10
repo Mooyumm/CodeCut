@@ -552,7 +552,7 @@ enum AudioChunker {
         func uint32(_ value: UInt32) { var value = value.littleEndian; withUnsafeBytes(of: &value) { wav.append(contentsOf: $0) } }
         let blockAlign = channels * 2
         text("RIFF"); uint32(UInt32(36 + pcm.count)); text("WAVEfmt "); uint32(16); uint16(1); uint16(UInt16(channels)); uint32(UInt32(sampleRate)); uint32(UInt32(sampleRate * blockAlign)); uint16(UInt16(blockAlign)); uint16(16); text("data"); uint32(UInt32(pcm.count)); wav.append(pcm)
-        let url = FileManager.default.temporaryDirectory.appending(path: "CutFlow-ASR-\(UUID().uuidString).wav")
+        let url = FileManager.default.temporaryDirectory.appending(path: "CodeCut-ASR-\(UUID().uuidString).wav")
         try wav.write(to: url, options: .atomic)
         let duration = Double(pcm.count) / Double(sampleRate * blockAlign)
         return .init(url: url, start: start, duration: duration, speechRanges: speechRanges(pcm: pcm, sampleRate: sampleRate, channels: channels), ownershipDuration: ownershipDuration ?? duration)
@@ -693,7 +693,7 @@ struct MiMoEditClient: Sendable {
 }
 
 enum KeychainStore {
-    private static let service = "com.cutflow.mimo"
+    private static let service = "com.codecut.mimo"
     nonisolated(unsafe) private static var sessionValues: [String: String] = [:]
     private static let lock = NSLock()
 

@@ -126,7 +126,7 @@ private struct TopBar: View {
                 .buttonStyle(.plain)
                 .help(projectSidebarCollapsed ? "展开项目栏" : "折叠项目栏")
             Image(systemName: "scissors").font(.title3.weight(.semibold)).foregroundStyle(.indigo)
-            Text("CutFlow").font(.headline)
+            Text("CodeCut").font(.headline)
             Divider().frame(height: 18)
             Text(model.projectName).foregroundStyle(.secondary).lineLimit(1)
             if model.hasUnsavedChanges { Circle().fill(.orange).frame(width: 6, height: 6).help("有未保存更改") }

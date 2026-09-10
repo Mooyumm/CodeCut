@@ -21,9 +21,9 @@ enum ProjectStore {
         }
     }
     static func defaultURL(for name: String) -> URL {
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "CutFlow/Projects", directoryHint: .isDirectory)
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "CodeCut/Projects", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appending(path: "\(name).cutflow")
+        return folder.appending(path: "\(name).codecut")
     }
     static func save(_ document: ProjectDocument, to url: URL) throws {
         let backup = url.appendingPathExtension("backup")
@@ -44,13 +44,13 @@ enum ProjectStore {
     static func recentProjects() -> [URL] {
         let folder = defaultURL(for: "placeholder").deletingLastPathComponent()
         return ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
-            .filter { $0.pathExtension == "cutflow" }
+            .filter { $0.pathExtension == "codecut" }
             .sorted { ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) > ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
     }
     static func rename(_ url: URL, to name: String) throws -> URL {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, !clean.contains("/"), !clean.contains(":") else { throw Error.invalidName }
-        let destination = url.deletingLastPathComponent().appending(path: "\(clean).cutflow")
+        let destination = url.deletingLastPathComponent().appending(path: "\(clean).codecut")
         guard destination == url || !FileManager.default.fileExists(atPath: destination.path) else { throw Error.projectExists }
         var document = try load(from: url)
         document.name = clean
@@ -106,7 +106,7 @@ enum TranscriptCache {
         let attributes = try FileManager.default.attributesOfItem(atPath: videoURL.path)
         let cacheIdentity = ["timing-v9", videoURL.standardizedFileURL.path, String((attributes[.size] as? NSNumber)?.int64Value ?? 0), String((attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0), identity].joined(separator: "|")
         let key = SHA256.hash(data: Data(cacheIdentity.utf8)).map { String(format: "%02x", $0) }.joined()
-        let root = folder ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "CutFlow/Transcripts", directoryHint: .isDirectory)
+        let root = folder ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "CodeCut/Transcripts", directoryHint: .isDirectory)
         return root.appending(path: "\(key).json")
     }
 }
@@ -240,7 +240,7 @@ enum TimelineExporter {
         let source = URL(fileURLWithPath: edl.sourcePath).absoluteString
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <fcpxml version="1.10"><resources><format id="r1" name="CutFlowFormat" frameDuration="1/\(denominator)s" width="1920" height="1080"/><asset id="r2" name="\(xml(name))" src="\(xml(source))" start="0s" duration="\(time(edl.sourceDuration))" hasVideo="1" hasAudio="1" format="r1"/></resources><library><event name="CutFlow"><project name="\(xml(name))"><sequence format="r1" duration="\(time(edl.outputDuration))" tcStart="0s" tcFormat="NDF"><spine>\(clips)</spine></sequence></project></event></library></fcpxml>
+        <fcpxml version="1.10"><resources><format id="r1" name="CodeCutFormat" frameDuration="1/\(denominator)s" width="1920" height="1080"/><asset id="r2" name="\(xml(name))" src="\(xml(source))" start="0s" duration="\(time(edl.sourceDuration))" hasVideo="1" hasAudio="1" format="r1"/></resources><library><event name="CodeCut"><project name="\(xml(name))"><sequence format="r1" duration="\(time(edl.outputDuration))" tcStart="0s" tcFormat="NDF"><spine>\(clips)</spine></sequence></project></event></library></fcpxml>
         """
     }
 

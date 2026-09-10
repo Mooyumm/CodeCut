@@ -1,8 +1,8 @@
-# CutFlow 自动快编
+# CodeCut 自动快编
 
 ## macOS / Xcode 版本
 
-在 Xcode 中打开 `CutFlowMac/CutFlow.xcodeproj`，选择 `CutFlow` scheme、运行目标选择 `My Mac` 后运行。不要再用 `Package.swift` 启动应用；它只保留给单元测试。
+在 Xcode 中打开 `CodeCutMac/CodeCut.xcodeproj`，选择 `CodeCut` scheme、运行目标选择 `My Mac` 后运行。不要再用 `Package.swift` 启动应用；它只保留给单元测试。
 
 原生版本目前包含：
 
@@ -19,7 +19,7 @@ MiMo V2.5 ASR 按官方 OpenAI 兼容协议调用 `/chat/completions`。应用�
 命令行验证：
 
 ```bash
-cd CutFlowMac
+cd CodeCutMac
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 ```
 

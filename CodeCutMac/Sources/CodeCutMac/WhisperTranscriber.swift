@@ -1,7 +1,7 @@
 import Foundation
 import WhisperKit
 
-// CutFlow keeps the pipeline on MainActor; this bridges WhisperKit's pre-Swift-6 concurrency annotations.
+// CodeCut keeps the pipeline on MainActor; this bridges WhisperKit's pre-Swift-6 concurrency annotations.
 extension WhisperKit: @retroactive @unchecked Sendable {}
 
 @MainActor

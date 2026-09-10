@@ -4,7 +4,7 @@ import AppKit
 import Testing
 
 import WhisperKit
-@testable import CutFlowMac
+@testable import CodeCutMac
 
 private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool = false) -> TranscriptWord {
     TranscriptWord(text: text, start: start, end: end, isDeleted: deleted)
@@ -183,7 +183,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func projectRoundTripDoesNotContainAPIKey() throws {
-    let url = FileManager.default.temporaryDirectory.appending(path: "cutflow-test-\(UUID()).cutflow")
+    let url = FileManager.default.temporaryDirectory.appending(path: "codecut-test-\(UUID()).codecut")
     defer { try? FileManager.default.removeItem(at: url) }
     let document = ProjectDocument(name: "测试", sourcePath: "/tmp/a.mov", transcript: .init(assetID: "a", duration: 1, words: [word("好", 0, 1)]), suggestions: [], breaths: [], breathMode: .confirm, frameRate: 25)
     try ProjectStore.save(document, to: url)
@@ -795,7 +795,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func projectTrimRoundTripAndSRTExcludeTrimmedWords() throws {
-    let url = FileManager.default.temporaryDirectory.appending(path: "cutflow-trim-\(UUID()).cutflow")
+    let url = FileManager.default.temporaryDirectory.appending(path: "codecut-trim-\(UUID()).codecut")
     defer { try? FileManager.default.removeItem(at: url) }
     let words = [word("开头", 0, 1), word("保留", 2, 3), word("结尾", 4, 5)]
     let deleted = [TimeRange(start: 0, end: 2), TimeRange(start: 4, end: 5)]
@@ -812,24 +812,24 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func projectRenameUpdatesFileAndDocumentName() throws {
-    let folder = FileManager.default.temporaryDirectory.appending(path: "cutflow-rename-\(UUID())")
+    let folder = FileManager.default.temporaryDirectory.appending(path: "codecut-rename-\(UUID())")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
-    let original = folder.appending(path: "旧名称.cutflow")
+    let original = folder.appending(path: "旧名称.codecut")
     let document = ProjectDocument(name: "旧名称", sourcePath: "/tmp/a.mov", transcript: nil, suggestions: [], breaths: [], breathMode: .confirm, frameRate: 25)
     try ProjectStore.save(document, to: original)
     let renamed = try ProjectStore.rename(original, to: "新名称")
     #expect(!FileManager.default.fileExists(atPath: original.path))
-    #expect(renamed.lastPathComponent == "新名称.cutflow")
+    #expect(renamed.lastPathComponent == "新名称.codecut")
     #expect(try ProjectStore.load(from: renamed).name == "新名称")
     #expect(throws: (any Error).self) { try ProjectStore.rename(renamed, to: "../非法") }
 }
 
 @Test func projectLoadRecoversBackupAfterPrimaryCorruption() throws {
-    let folder = FileManager.default.temporaryDirectory.appending(path: "cutflow-backup-\(UUID())")
+    let folder = FileManager.default.temporaryDirectory.appending(path: "codecut-backup-\(UUID())")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
-    let url = folder.appending(path: "恢复.cutflow")
+    let url = folder.appending(path: "恢复.codecut")
     let original = ProjectDocument(name: "可恢复版本", sourcePath: "/tmp/a.mov", transcript: nil, suggestions: [], breaths: [], breathMode: .confirm, frameRate: 25)
     try ProjectStore.save(original, to: url)
     var updated = original; updated.name = "最新版本"
@@ -863,7 +863,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func convertsExternalVideoToMiMoSizedWAVChunks() async throws {
-    guard let path = ProcessInfo.processInfo.environment["CUTFLOW_TEST_VIDEO"] else { return }
+    guard let path = ProcessInfo.processInfo.environment["CODECUT_TEST_VIDEO"] else { return }
     let chunks = try await AudioChunker.makeWAVChunks(videoURL: URL(fileURLWithPath: path))
     defer { chunks.forEach { try? FileManager.default.removeItem(at: $0.url) } }
     #expect(!chunks.isEmpty)
@@ -929,22 +929,22 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func extractsExternalVideoWaveform() async throws {
-    guard let path = ProcessInfo.processInfo.environment["CUTFLOW_TEST_VIDEO"] else { return }
+    guard let path = ProcessInfo.processInfo.environment["CODECUT_TEST_VIDEO"] else { return }
     let samples = try await AudioWaveform.samples(videoURL: URL(fileURLWithPath: path), count: 240)
     #expect(samples.count == 240)
     #expect((samples.max() ?? 0) > 0.9)
 }
 
 @Test func extractsExternalVideoThumbnails() async throws {
-    guard let path = ProcessInfo.processInfo.environment["CUTFLOW_TEST_VIDEO"] else { return }
+    guard let path = ProcessInfo.processInfo.environment["CODECUT_TEST_VIDEO"] else { return }
     let images = try await VideoThumbnails.jpegData(videoURL: URL(fileURLWithPath: path), count: 4)
     #expect(images.count == 4)
     #expect(images.allSatisfy { NSImage(data: $0) != nil })
 }
 
 @MainActor @Test func rendersExternalVideoEditToMP4() async throws {
-    guard let path = ProcessInfo.processInfo.environment["CUTFLOW_TEST_VIDEO"] else { return }
-    let folder = FileManager.default.temporaryDirectory.appending(path: "cutflow-render-\(UUID())")
+    guard let path = ProcessInfo.processInfo.environment["CODECUT_TEST_VIDEO"] else { return }
+    let folder = FileManager.default.temporaryDirectory.appending(path: "codecut-render-\(UUID())")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
     let edl = EditDecisionList(sourcePath: path, sourceDuration: 479, frameRate: 30, deletedRanges: [.init(start: 2, end: 479)], keptRanges: [.init(start: 0, end: 2)], words: [word("测试字幕", 0.2, 1.8)], suggestions: [], breaths: [], burnSubtitles: true, subtitleFontSize: 48)
@@ -960,7 +960,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func transcriptCacheChangesWhenSourceChanges() throws {
-    let folder = FileManager.default.temporaryDirectory.appending(path: "cutflow-cache-\(UUID())")
+    let folder = FileManager.default.temporaryDirectory.appending(path: "codecut-cache-\(UUID())")
     let video = folder.appending(path: "sample.mov")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
@@ -974,10 +974,10 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @MainActor @Test func openingMissingSourceNeverKeepsPreviousVideo() async throws {
-    let folder = FileManager.default.temporaryDirectory.appending(path: "cutflow-open-\(UUID())")
+    let folder = FileManager.default.temporaryDirectory.appending(path: "codecut-open-\(UUID())")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
-    let project = folder.appending(path: "missing.cutflow")
+    let project = folder.appending(path: "missing.codecut")
     let document = ProjectDocument(name: "待重定位", sourcePath: folder.appending(path: "missing.mov").path, transcript: .init(assetID: "missing.mov", duration: 2, words: [word("测试", 0, 1)]), suggestions: [], breaths: [], breathMode: .automatic, frameRate: 25, playhead: 1.25)
     try ProjectStore.save(document, to: project)
     let model = EditorModel()
