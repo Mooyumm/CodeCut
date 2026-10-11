@@ -3,6 +3,7 @@ import CryptoKit
 import AVFoundation
 import QuartzCore
 import AppKit
+import UniformTypeIdentifiers
 
 private final class ExportSessionBox: @unchecked Sendable {
     let value: AVAssetExportSession
@@ -10,6 +11,9 @@ private final class ExportSessionBox: @unchecked Sendable {
 }
 
 enum ProjectStore {
+    /// 项目文件类型：注册 .codecut 用于打开面板的类型过滤。
+    static let contentType = UTType(filenameExtension: "codecut") ?? .data
+
     enum Error: LocalizedError {
         case missingSource, invalidName, projectExists
         var errorDescription: String? {
@@ -69,18 +73,10 @@ enum ProjectStore {
 }
 
 enum TranscriptCache {
-    static func load(videoURL: URL, settings: MiMoSettings) -> TranscriptDocument? {
-        load(videoURL: videoURL, identity: [settings.baseURL, settings.asrPath, settings.asrModel].joined(separator: "|"))
-    }
-
     static func load(videoURL: URL, identity: String) -> TranscriptDocument? {
         guard let url = try? url(videoURL: videoURL, identity: identity),
               let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(TranscriptDocument.self, from: data)
-    }
-
-    static func save(_ document: TranscriptDocument, videoURL: URL, settings: MiMoSettings) throws {
-        try save(document, videoURL: videoURL, identity: [settings.baseURL, settings.asrPath, settings.asrModel].joined(separator: "|"))
     }
 
     static func save(_ document: TranscriptDocument, videoURL: URL, identity: String) throws {
@@ -89,17 +85,9 @@ enum TranscriptCache {
         try JSONEncoder.pretty.encode(document).write(to: destination, options: .atomic)
     }
 
-    static func remove(videoURL: URL, settings: MiMoSettings) {
-        remove(videoURL: videoURL, identity: [settings.baseURL, settings.asrPath, settings.asrModel].joined(separator: "|"))
-    }
-
     static func remove(videoURL: URL, identity: String) {
         guard let destination = try? url(videoURL: videoURL, identity: identity) else { return }
         try? FileManager.default.removeItem(at: destination)
-    }
-
-    static func url(videoURL: URL, settings: MiMoSettings, folder: URL? = nil) throws -> URL {
-        try url(videoURL: videoURL, identity: [settings.baseURL, settings.asrPath, settings.asrModel].joined(separator: "|"), folder: folder)
     }
 
     static func url(videoURL: URL, identity: String, folder: URL? = nil) throws -> URL {
@@ -130,7 +118,7 @@ enum TimelineExporter {
         guard let sourceVideo = try await source.loadTracks(withMediaType: .video).first else { throw ProjectStore.Error.missingSource }
         let sourceAudio = try await source.loadTracks(withMediaType: .audio).first
         let composition = AVMutableComposition()
-        guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { throw MiMoError.invalidResponse("无法创建视频轨道") }
+        guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { throw AIError.invalidResponse("无法创建视频轨道") }
         let audio = sourceAudio.flatMap { _ in composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) }
         video.preferredTransform = try await sourceVideo.load(.preferredTransform)
         var cursor = CMTime.zero
@@ -140,7 +128,7 @@ enum TimelineExporter {
             if let sourceAudio, let audio { try audio.insertTimeRange(range, of: sourceAudio, at: cursor) }
             cursor = cursor + range.duration
         }
-        guard cursor > .zero, let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { throw MiMoError.invalidResponse("没有可导出的视频片段") }
+        guard cursor > .zero, let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { throw AIError.invalidResponse("没有可导出的视频片段") }
         let exporterBox = ExportSessionBox(exporter)
         if edl.burnSubtitles {
             let cues = exportSubtitleCues(edl)

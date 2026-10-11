@@ -4,40 +4,62 @@ import AVFoundation
 import NaturalLanguage
 import AppKit
 
-struct MiMoSettings: Sendable {
+struct AISettings: Sendable {
+    /// 文本模型的来源。DeepSeek 云端接口已关闭，代码保留以便随时切回去。
+    enum Backend: String, Sendable {
+        case local
+        case deepSeek
+    }
+
+    static let providerName = "DeepSeek"
+    /// 跟着用户在设置里选的本地模型走，不能固化成 let。
+    static var localServiceName: String { "本机 \(LocalVLM.modelDisplayName)" }
+    /// 本机服务的 OpenAI 兼容入口。AIClient 直接指向它，云端接口已关闭。
+    static var localEndpoint: String { LocalVLM.serverBase.appending(path: "v1").absoluteString }
+
     var baseURL: String
     var model: String
-    var asrModel: String
-    var asrPath: String
     var apiKey: String
-    var provider: String = "mimo"
-    var serviceName: String { provider == "deepseek" ? "DeepSeek" : "MiMo" }
+    var backend: Backend = .deepSeek
+
+    var isLocal: Bool { backend == .local }
+    var serviceName: String { isLocal ? Self.localServiceName : Self.providerName }
+
     func requestBody(_ body: [String: Any]) -> [String: Any] {
-        guard provider == "deepseek" else { return body }
+        // `thinking` 是 DeepSeek 的参数，本机 llama.cpp 不认它，别发过去。
+        guard !isLocal else { return body }
         var body = body
         body["thinking"] = ["type": "disabled"]
         return body
     }
-    static var current: Self {
-        let defaults = UserDefaults.standard
-        if defaults.string(forKey: "ai.provider") == "deepseek" { return .deepSeek }
-        let savedPath = defaults.string(forKey: "mimo.asrPath")
-        return .init(baseURL: defaults.string(forKey: "mimo.baseURL") ?? "https://api.xiaomimimo.com/v1", model: defaults.string(forKey: "mimo.model") ?? "mimo-v2.5-pro", asrModel: defaults.string(forKey: "mimo.asrModel") ?? "mimo-v2.5-asr", asrPath: savedPath == nil || savedPath == "/audio/transcriptions" ? "/chat/completions" : savedPath!, apiKey: KeychainStore.read("mimo.apiKey") ?? "")
+
+    /// CodeCut 只走本机模型：不再需要 API Key，也不向 DeepSeek 发任何请求。
+    static var current: Self { .local }
+
+    static var local: Self {
+        .init(baseURL: localEndpoint, model: "codecut-local", apiKey: "local", backend: .local)
     }
+
     static var deepSeek: Self {
         let defaults = UserDefaults.standard
-        return .init(baseURL: defaults.string(forKey: "deepseek.baseURL") ?? "https://api.deepseek.com", model: defaults.string(forKey: "deepseek.model") ?? "deepseek-v4-flash", asrModel: "", asrPath: "", apiKey: KeychainStore.read("deepseek.apiKey") ?? "", provider: "deepseek")
+        return .init(baseURL: defaults.string(forKey: "deepseek.baseURL") ?? "https://api.deepseek.com", model: defaults.string(forKey: "deepseek.model") ?? "deepseek-v4-flash", apiKey: KeychainStore.read("deepseek.apiKey") ?? "")
+    }
+
+    /// 本机后端在调用前要先把 llama-server 拉起来；没装运行时或权重会抛出明确错误。
+    func prepare() async throws {
+        guard isLocal else { return }
+        _ = try await LocalVLM.ensureServer()
     }
 }
 
-enum MiMoError: LocalizedError {
+enum AIError: LocalizedError {
     case missingKey, invalidURL, unauthorized, rateLimited, server(Int, String), invalidResponse(String), chunkFailed(Int, Int, String)
     var errorDescription: String? {
         switch self {
-        case .missingKey: "请先在设置中填写当前 AI 提供商的 API Key。"
+        case .missingKey: "请先在设置中填写 DeepSeek 的 API Key。"
         case .invalidURL: "AI API 地址无效。"
         case .unauthorized: "API Key 无效或没有该模型权限。"
-        case .rateLimited: "MiMo 请求过于频繁，请稍后重试。"
+        case .rateLimited: "AI 请求过于频繁，请稍后重试。"
         case .server(let code, let text): "AI API（\(code)）：\(text)"
         case .invalidResponse(let text): "AI 返回格式无法解析：\(text)"
         case .chunkFailed(let index, let total, let text): "第 \(index)/\(total) 个音频片段转写失败：\(text)"
@@ -45,7 +67,7 @@ enum MiMoError: LocalizedError {
     }
 }
 
-private enum MiMoHTTP {
+private enum AIHTTP {
     static func checkedData(for request: URLRequest) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(for: request)
         return try checked(data: data, response: response)
@@ -55,28 +77,100 @@ private enum MiMoHTTP {
         return try checked(data: data, response: response)
     }
     private static func checked(data: Data, response: URLResponse) throws -> Data {
-        guard let http = response as? HTTPURLResponse else { throw MiMoError.invalidResponse("不是 HTTP 响应") }
-        if http.statusCode == 401 || http.statusCode == 403 { throw MiMoError.unauthorized }
-        if http.statusCode == 429 { throw MiMoError.rateLimited }
-        guard 200..<300 ~= http.statusCode else { throw MiMoError.server(http.statusCode, String(data: data, encoding: .utf8) ?? "未知错误") }
+        guard let http = response as? HTTPURLResponse else { throw AIError.invalidResponse("不是 HTTP 响应") }
+        if http.statusCode == 401 || http.statusCode == 403 { throw AIError.unauthorized }
+        if http.statusCode == 429 { throw AIError.rateLimited }
+        guard 200..<300 ~= http.statusCode else { throw AIError.server(http.statusCode, String(data: data, encoding: .utf8) ?? "未知错误") }
         return data
     }
-    static func endpoint(_ settings: MiMoSettings, path: String) throws -> URL {
-        guard let url = URL(string: settings.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path) else { throw MiMoError.invalidURL }
+    static func endpoint(_ settings: AISettings, path: String) throws -> URL {
+        guard let url = URL(string: settings.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path) else { throw AIError.invalidURL }
         return url
     }
 }
 
-struct MiMoClient: Sendable {
-    let settings: MiMoSettings
+struct AIClient: Sendable {
+    let settings: AISettings
     func chat(instruction: String, transcript: String) async throws -> String {
         var request = try authorizedRequest(path: "/chat/completions")
         request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0.2, "messages": [["role": "system", "content": "你是视频文字剪辑助手。只根据带时间戳的文字稿提出建议，不虚构内容，切点必须位于给定词语边界。"], ["role": "user", "content": "任务：\(instruction)\n\n文字稿：\n\(transcript)"]]]))
-        let response = try JSONDecoder().decode(ChatResponse.self, from: await MiMoHTTP.checkedData(for: request))
-        guard let content = response.choices.first?.message.content, !content.isEmpty else { throw MiMoError.invalidResponse("没有文本内容") }
+        let response = try JSONDecoder().decode(ChatResponse.self, from: await AIHTTP.checkedData(for: request))
+        guard let content = response.choices.first?.message.content, !content.isEmpty else { throw AIError.invalidResponse("没有文本内容") }
         return content
     }
     func ping() async throws { _ = try await chat(instruction: "只回复 OK", transcript: "测试") }
+
+    // MARK: - 分镜配 B-roll
+
+    /// 一条分镜行 + 本地筛出来的候选素材。候选描述是给人看的一句话，模型只看得到这些。
+    struct BrollChoiceRequest: Sendable, Equatable {
+        var row: Int
+        var script: String
+        var shot: String
+        var note: String
+        var candidates: [String]
+    }
+
+    /// 让本机模型在候选里挑一条。返回 行号（0 基）-> 候选序号（1 开始，0 表示都不合适）。
+    /// 模型没答的行不会出现在字典里，调用方自己决定怎么兜底。
+    func chooseBroll(for requests: [BrollChoiceRequest]) async throws -> [Int: Int] {
+        guard !requests.isEmpty else { return [:] }
+        let rule = """
+        你是视频剪辑师，正在按分镜给口播配 B-roll 素材。
+        每一条分镜会给出：台词、镜头类型、分镜备注，以及若干条候选素材的一句话描述（文件名｜时长｜画面标签｜画面结论｜认出来的物品）。
+        判断标准只有两条：画面内容要对得上台词正在说的事；镜头类型和分镜备注里写的拍法（特写／细节／固定镜头／环绕移动…）要能实现。
+        只挑真正对得上的那一条。都不合适就填 0，不要为了凑数挑“差不多”的素材。
+        只返回 JSON：{"picks":[{"row":1,"pick":2}]}。row 是分镜序号（从 1 开始），pick 是候选序号（从 1 开始，都不合适填 0）。
+        """
+        var lines: [String] = []
+        for request in requests {
+            lines.append("分镜 \(request.row + 1)")
+            lines.append("台词：\(request.script)")
+            if !request.shot.isEmpty { lines.append("镜头类型：\(request.shot)") }
+            if !request.note.isEmpty { lines.append("分镜备注：\(request.note)") }
+            for (index, candidate) in request.candidates.enumerated() { lines.append("候选 \(index + 1)：\(candidate)") }
+            lines.append("")
+        }
+        var request = try authorizedRequest(path: "/chat/completions")
+        request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody([
+            "model": settings.model,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "response_format": ["type": "json_object"],
+            "messages": [["role": "system", "content": rule], ["role": "user", "content": lines.joined(separator: "\n")]]
+        ]))
+        let response = try JSONDecoder().decode(ChatResponse.self, from: await AIHTTP.checkedData(for: request))
+        guard let raw = response.choices.first?.message.content else { throw AIError.invalidResponse("没有挑选结果") }
+        return Self.parseBrollPicks(raw, requests: requests)
+    }
+
+    /// 解析挑选结果：只认得出、且序号落在候选范围内的 pick。模型偶尔会把序号写成字符串，这里一起兜住。
+    static func parseBrollPicks(_ raw: String, requests: [BrollChoiceRequest]) -> [Int: Int] {
+        let cleaned = raw
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = cleaned.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        let items = (object["picks"] as? [[String: Any]]) ?? (object["items"] as? [[String: Any]]) ?? []
+        let counts = Dictionary(uniqueKeysWithValues: requests.map { ($0.row + 1, $0.candidates.count) })
+        var picks: [Int: Int] = [:]
+        for item in items {
+            guard let row = intValue(item["row"]), let count = counts[row] else { continue }
+            guard let pick = intValue(item["pick"] ?? item["asset"] ?? item["index"]), pick >= 0, pick <= count else { continue }
+            picks[row - 1] = pick
+        }
+        return picks
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        switch value {
+        case let value as Int: value
+        case let value as Double: Int(value)
+        case let value as String: Int(value.trimmingCharacters(in: .whitespaces))
+        default: nil
+        }
+    }
 
     func generateDetailedStoryboardPrompt(item: StoryboardItem, subtitle: String, duration: Double) async throws -> String {
         var request = try authorizedRequest(path: "/chat/completions")
@@ -95,8 +189,8 @@ struct MiMoClient: Sendable {
         """
         let input = Self.storyboardPromptInput(item: item, subtitle: subtitle, duration: duration)
         request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0.3, "max_tokens": 8192, "messages": [["role": "system", "content": rule], ["role": "user", "content": input]]]))
-        let response = try JSONDecoder().decode(ChatResponse.self, from: await MiMoHTTP.checkedData(for: request))
-        guard let content = response.choices.first?.message.content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MiMoError.invalidResponse("没有生成提示词") }
+        let response = try JSONDecoder().decode(ChatResponse.self, from: await AIHTTP.checkedData(for: request))
+        guard let content = response.choices.first?.message.content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AIError.invalidResponse("没有生成提示词") }
         return content
     }
 
@@ -142,8 +236,8 @@ struct MiMoClient: Sendable {
         只返回 JSON：{"items":[{"startIndex":0,"endIndex":2,"type":"实拍空镜","description":"画面描述","composition":"景别与构图","movement":"镜头运动","elements":"素材或动画元素","notes":"制作备注"}]}。
         """
         request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0.25, "max_tokens": 8192, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": transcript]]]))
-        let response = try JSONDecoder().decode(ChatResponse.self, from: await MiMoHTTP.checkedData(for: request))
-        guard let raw = response.choices.first?.message.content else { throw MiMoError.invalidResponse("没有分镜内容") }
+        let response = try JSONDecoder().decode(ChatResponse.self, from: await AIHTTP.checkedData(for: request))
+        guard let raw = response.choices.first?.message.content else { throw AIError.invalidResponse("没有分镜内容") }
         return try Self.parseStoryboards(raw, cues: cues).filter { item in
             guard let first = item.wordIDs.first, let cueIndex = cues.firstIndex(where: { $0.wordIDs.contains(first) }) else { return false }
             return cueIndex >= generateFromIndex
@@ -152,7 +246,7 @@ struct MiMoClient: Sendable {
 
     static func parseStoryboards(_ raw: String, cues: [SubtitleCue]) throws -> [StoryboardItem] {
         let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let payload = try? JSONDecoder().decode(StoryboardPayload.self, from: Data(cleaned.utf8)) else { throw MiMoError.invalidResponse("分镜 JSON 不完整或已被截断") }
+        guard let payload = try? JSONDecoder().decode(StoryboardPayload.self, from: Data(cleaned.utf8)) else { throw AIError.invalidResponse("分镜 JSON 不完整或已被截断") }
         return payload.items.compactMap { item in
             guard cues.indices.contains(item.startIndex), cues.indices.contains(item.endIndex), item.endIndex >= item.startIndex else { return nil }
             let range = cues[item.startIndex...item.endIndex]
@@ -163,9 +257,125 @@ struct MiMoClient: Sendable {
         }
     }
 
-    func segmentWordBoundaries(_ words: [TranscriptWord], reference: String = "") async throws -> Set<UUID> {
+    struct SegmentationOutcome: Sendable {
+        var breaks: Set<UUID> = []
+        var windowCount = 0
+        var failedWindows = 0
+    }
+
+    /// 断句主入口。长稿先按章节切成带上下文的窗口，每个窗口都把**去掉序号后的纯文本**交给
+    /// 模型换行，返回结果再逐字对齐回逐词稿；某个窗口对齐失败时只退那一个窗口到逐词序号方案，
+    /// 不影响其它窗口。
+    func segmentWordBoundaries(_ words: [TranscriptWord], reference: String = "") async throws -> SegmentationOutcome {
         let activeWords = words.filter { !$0.isDeleted }
-        guard activeWords.count > 1 else { return [] }
+        guard activeWords.count > 1 else { return SegmentationOutcome() }
+        let windows = TimelineEngine.segmentationWindows(in: activeWords)
+        var outcome = SegmentationOutcome(windowCount: windows.count)
+        var firstError: Error?
+        for window in windows {
+            let slice = Array(activeWords[window])
+            let before = Self.contextText(activeWords, endingBefore: window.lowerBound)
+            let after = Self.contextText(activeWords, startingAt: window.upperBound)
+            do {
+                outcome.breaks.formUnion(try await segmentByReturnedArticle(slice, contextBefore: before, contextAfter: after, reference: reference))
+            } catch {
+                let articleError = error
+                do {
+                    outcome.breaks.formUnion(try await segmentByWordIndexes(slice, reference: reference))
+                } catch let indexError {
+                    outcome.failedWindows += 1
+                    if firstError == nil {
+                        firstError = AIError.invalidResponse("原文换行失败（\(articleError.localizedDescription)），序号换行也失败（\(indexError.localizedDescription)）")
+                    }
+                }
+            }
+        }
+        // 全部窗口都失败才算断句失败；部分失败保留成功窗口的结果，其余交给本地规则。
+        if outcome.breaks.isEmpty, let firstError { throw firstError }
+        return outcome
+    }
+
+    /// 窗口前后各取一小段原文当上下文，让模型知道这一段从哪接上、后面要接什么。
+    static func contextText(_ words: [TranscriptWord], endingBefore index: Int, limit: Int = 120) -> String {
+        guard index > 0, index <= words.count else { return "" }
+        var result: [String] = [], collected = 0
+        for word in words[..<index].reversed() {
+            collected += word.text.count
+            if collected > limit { break }
+            result.append(word.text)
+        }
+        return result.reversed().joined()
+    }
+
+    static func contextText(_ words: [TranscriptWord], startingAt index: Int, limit: Int = 120) -> String {
+        guard index >= 0, index < words.count else { return "" }
+        var result: [String] = [], collected = 0
+        for word in words[index...] {
+            collected += word.text.count
+            if collected > limit { break }
+            result.append(word.text)
+        }
+        return result.joined()
+    }
+
+    /// 把这一段的文字去掉 `[序号]` 后发给模型，让它在没有标记噪声的情况下只插换行。
+    /// 返回的原文用带子编辑距离对齐回逐字稿，换行位置逐字映射成词边界。
+    func segmentByReturnedArticle(_ activeWords: [TranscriptWord], contextBefore: String = "", contextAfter: String = "", reference: String) async throws -> Set<UUID> {
+        let article = activeWords.map(\.text).joined()
+        guard !article.isEmpty else { return [] }
+        var request = try authorizedRequest(path: "/chat/completions")
+        let rule = """
+        你是中文口播字幕断句器。输入是一整段连续的识别稿纯文本（往往没有标点或标点很少）。你唯一要做的调整是换行：在合适的位置插入换行符，把整段话切分成一条条适合观看的字幕。
+        长稿会被分成几段分别送给你：你只处理 <article> 里的内容，<before> 和 <after> 只是上下文，不要给它们换行，也不要把它们抄进返回结果。
+        严禁增加、删除或修改任何一个字和标点：不要纠正错别字、不要补充标点、不要删除重复、卡顿、语气词和 NG，也不要漏抄任何内容。返回的正文必须与输入逐字一致，只允许多出换行符。
+        这是用于成片观看的字幕，不是语法分析。每条字幕至少 6 个有效字符，通常 10–24 字；语义完整比字数更重要，必要时可以稍长。
+        禁止按固定字数机械换行，禁止连续多行都卡在相同字数。应优先在完整句意、自然语气停顿、话题转换和重新起句处换行。
+        不得切断词语、主谓或动宾结构、介词结构、数字与单位、数量词、“的/地/得”结构、固定表达、品牌名或产品名。
+        “这也是、就是、所以、但是、因为、而且、然后、但说实话”不能单独成行，必须与后面的完整意思放在一起。
+        逗号只是候选分界，不是必须换行；逗号前后任一边过短或语义未完成时不得换行。句号、问号和感叹号通常是边界。顿号只表示并列，绝不能在顿号处分句。冒号不得拆开 3000:1 这类比例。
+        错误示例：“这也是，\n为什么我觉得投影仪更适合租房。”
+        正确示例：“这也是，为什么我觉得投影仪更适合租房。”
+        错误示例：“就是花一，\n个容易接受的，\n价格。”
+        正确示例：“就是花一，个容易接受的价格。”
+        不要输出 JSON 之外的任何内容。只返回 JSON：{"article":"插入换行后的完整原文"}。
+        """
+        let input = Self.segmentationInput(article: article, reference: reference, contextBefore: contextBefore, contextAfter: contextAfter)
+        // 输出长度和输入同量级，按字数给预算，避免长稿被截断。
+        let budget = min(8192, max(2048, Int(Double(article.count) * 1.6) + 256))
+        request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "max_tokens": budget, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": input]]]))
+        var lastError: Error = AIError.invalidResponse("没有断句原文")
+        for _ in 0..<2 {
+            let response = try JSONDecoder().decode(ChatResponse.self, from: await AIHTTP.checkedData(for: request))
+            guard let raw = response.choices.first?.message.content,
+                  !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            do {
+                let returned = try Self.parseSegmentedArticle(raw)
+                guard let result = TimelineEngine.applySegmentedArticle(returned, to: activeWords) else {
+                    throw AIError.invalidResponse("返回原文与识别稿对不上")
+                }
+                return result.breaks
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    /// 交给模型的用户消息：正文不带任何序号标记，窗口前后各附一小段上下文。
+    static func segmentationInput(article: String, reference: String, contextBefore: String = "", contextAfter: String = "") -> String {
+        var parts = ["请只为 <article> 内的识别稿插入换行，然后按 JSON 返回。不要改动任何文字和标点。"]
+        if !contextBefore.isEmpty { parts.append("<before>\(contextBefore)</before>") }
+        parts.append("<article>\(article)</article>")
+        if !contextAfter.isEmpty { parts.append("<after>\(contextAfter)</after>") }
+        if !reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append("<reference>\(reference)</reference>") }
+        if !contextBefore.isEmpty || !contextAfter.isEmpty {
+            parts.append("<before> 和 <after> 只是上下文，不要给它们换行，也不要把它们抄进返回结果。")
+        }
+        return parts.joined(separator: "\n")
+    }
+
+    /// 退回方案：逐词带序号，只让模型挑选换行序号。
+    func segmentByWordIndexes(_ activeWords: [TranscriptWord], reference: String) async throws -> Set<UUID> {
         var request = try authorizedRequest(path: "/chat/completions")
         let rule = """
         你是中文口播字幕断句器。输入是带有 [序号] 的逐词识别稿。你只能选择在哪个序号对应的词之前换行，严禁改写或复述原文。
@@ -191,9 +401,9 @@ struct MiMoClient: Sendable {
         <article>\(indexedArticle)</article>\(referenceNote)
         """
         request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "max_tokens": 4096, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": input]]]))
-        var lastError: Error = MiMoError.invalidResponse("没有断句序号")
-        for _ in 0..<(settings.provider == "deepseek" ? 2 : 1) {
-            let response = try JSONDecoder().decode(ChatResponse.self, from: await MiMoHTTP.checkedData(for: request))
+        var lastError: Error = AIError.invalidResponse("没有断句序号")
+        for _ in 0..<2 {
+            let response = try JSONDecoder().decode(ChatResponse.self, from: await AIHTTP.checkedData(for: request))
             guard let raw = response.choices.first?.message.content,
                   !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
             do {
@@ -206,14 +416,35 @@ struct MiMoClient: Sendable {
         throw lastError
     }
 
+    static func parseSegmentedArticle(_ raw: String) throws -> String {
+        let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if let payload = try? JSONDecoder().decode(SegmentationPayload.self, from: Data(cleaned.utf8)), !payload.article.isEmpty { return payload.article }
+        // 模型偶尔会直接在 JSON 字符串里写裸换行；补上转义后再解析一次。
+        var repaired = "", inString = false, escaped = false
+        for character in cleaned {
+            if inString && !escaped {
+                if character == "\n" { repaired += "\\n"; continue }
+                if character == "\r" { repaired += "\\r"; continue }
+                if character == "\t" { repaired += "\\t"; continue }
+            }
+            repaired.append(character)
+            if character == "\"" && !escaped { inString.toggle() }
+            if character == "\\" && !escaped { escaped = true } else { escaped = false }
+        }
+        guard let payload = try? JSONDecoder().decode(SegmentationPayload.self, from: Data(repaired.utf8)), !payload.article.isEmpty else {
+            throw AIError.invalidResponse(cleaned)
+        }
+        return payload.article
+    }
+
     static func parseSegmentationBreakIndexes(_ raw: String, wordCount: Int) throws -> [Int] {
         let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard let payload = try? JSONDecoder().decode(SegmentationBreakPayload.self, from: Data(cleaned.utf8)) else {
-            throw MiMoError.invalidResponse("断句序号 JSON 不完整")
+            throw AIError.invalidResponse("断句序号 JSON 不完整")
         }
         let indexes = Array(Set(payload.breakBefore)).sorted()
         guard indexes.allSatisfy({ $0 > 0 && $0 < wordCount }) else {
-            throw MiMoError.invalidResponse("断句序号超出逐词稿范围")
+            throw AIError.invalidResponse("断句序号超出逐词稿范围")
         }
         return indexes
     }
@@ -242,9 +473,9 @@ struct MiMoClient: Sendable {
         只返回 JSON：{"corrections":[{"id":"原数字","text":"修正文字"}]}，没有明确错误就返回空数组。
         """
         request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": "参考稿和要求：\n\(reference)\n\n机器字幕：\n\(transcript)"]]]))
-        let data = try await MiMoHTTP.checkedData(for: request)
+        let data = try await AIHTTP.checkedData(for: request)
         let response = try JSONDecoder().decode(CorrectionResponse.self, from: data)
-        guard let raw = response.choices.first?.message.content else { throw MiMoError.invalidResponse("没有校对内容") }
+        guard let raw = response.choices.first?.message.content else { throw AIError.invalidResponse("没有校对内容") }
         return try Self.parseIndexedCorrections(raw, words: words)
     }
 
@@ -274,14 +505,14 @@ struct MiMoClient: Sendable {
         只返回文字确实发生变化的整行，行号必须来自输入。只返回 JSON：{"lines":[{"id":0,"text":"修正后的完整字幕行"}]}，无错误返回空数组。
         """
         request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": rule], ["role": "user", "content": "参考稿和要求：\n\(reference)\n\n机器字幕：\n\(transcript)"]]]))
-        let response = try JSONDecoder().decode(CorrectionResponse.self, from: await MiMoHTTP.checkedData(for: request))
-        guard let raw = response.choices.first?.message.content else { throw MiMoError.invalidResponse("没有校对内容") }
+        let response = try JSONDecoder().decode(CorrectionResponse.self, from: await AIHTTP.checkedData(for: request))
+        guard let raw = response.choices.first?.message.content else { throw AIError.invalidResponse("没有校对内容") }
         return try Self.parseLineCorrections(raw, lines: lines)
     }
 
     static func parseLineCorrections(_ raw: String, lines: [[TranscriptWord]]) throws -> [UUID: String] {
         let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let result = try? JSONDecoder().decode(LineCorrectionPayload.self, from: Data(cleaned.utf8)) else { throw MiMoError.invalidResponse("返回 JSON 不完整或已被截断") }
+        guard let result = try? JSONDecoder().decode(LineCorrectionPayload.self, from: Data(cleaned.utf8)) else { throw AIError.invalidResponse("返回 JSON 不完整或已被截断") }
         return result.lines.reduce(into: [:]) { corrections, item in
             guard lines.indices.contains(item.id), !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             corrections.merge(Self.mapCorrectedLine(item.text, to: lines[item.id])) { _, latest in latest }
@@ -312,7 +543,7 @@ struct MiMoClient: Sendable {
 
     static func parseIndexedCorrections(_ raw: String, words: [TranscriptWord]) throws -> [UUID: String] {
         let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let result = try? JSONDecoder().decode(CorrectionPayload.self, from: Data(cleaned.utf8)) else { throw MiMoError.invalidResponse("返回 JSON 不完整或已被截断") }
+        guard let result = try? JSONDecoder().decode(CorrectionPayload.self, from: Data(cleaned.utf8)) else { throw AIError.invalidResponse("返回 JSON 不完整或已被截断") }
         return result.corrections.reduce(into: [:]) { corrections, item in
             guard let index = Int(item.id), words.indices.contains(index), !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, item.text != words[index].text else { return }
             corrections[words[index].id] = item.text
@@ -321,7 +552,7 @@ struct MiMoClient: Sendable {
 
     static func parseCorrections(_ raw: String, validIDs: Set<UUID>) throws -> [UUID: String] {
         let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let result = try? JSONDecoder().decode(CorrectionPayload.self, from: Data(cleaned.utf8)) else { throw MiMoError.invalidResponse(cleaned) }
+        guard let result = try? JSONDecoder().decode(CorrectionPayload.self, from: Data(cleaned.utf8)) else { throw AIError.invalidResponse(cleaned) }
         return result.corrections.reduce(into: [:]) { corrections, item in
             guard let id = UUID(uuidString: item.id), validIDs.contains(id), !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             corrections[id] = item.text
@@ -329,8 +560,10 @@ struct MiMoClient: Sendable {
     }
 
     fileprivate func authorizedRequest(path: String) throws -> URLRequest {
-        guard !settings.apiKey.isEmpty else { throw MiMoError.missingKey }
-        var request = URLRequest(url: try MiMoHTTP.endpoint(settings, path: path), timeoutInterval: 120)
+        // 本机服务不校验 Authorization；云端后端才需要 Key。
+        guard settings.isLocal || !settings.apiKey.isEmpty else { throw AIError.missingKey }
+        // 本机模型比云端慢得多（长提示词能跑几分钟），超时按后端分开。
+        var request = URLRequest(url: try AIHTTP.endpoint(settings, path: path), timeoutInterval: settings.isLocal ? 900 : 120)
         request.httpMethod = "POST"; request.setValue("Bearer \(settings.apiKey)", forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         return request
     }
@@ -342,67 +575,18 @@ struct MiMoClient: Sendable {
         let breakBefore: [Int]
         enum CodingKeys: String, CodingKey { case breakBefore = "break_before" }
     }
+    private struct SegmentationPayload: Decodable { let article: String }
     private struct StoryboardPayload: Decodable {
         struct Item: Decodable { let startIndex, endIndex: Int; let type, description, composition, movement, elements, notes: String }
         let items: [Item]
     }
 }
 
-struct MiMoASRClient: Sendable {
-    let settings: MiMoSettings
-    func transcribe(videoURL: URL, progress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> TranscriptDocument {
-        guard !settings.apiKey.isEmpty else { throw MiMoError.missingKey }
-        let chunks = try await AudioChunker.makeWAVChunks(videoURL: videoURL)
-        defer { chunks.forEach { try? FileManager.default.removeItem(at: $0.url) } }
-        var results = Array(repeating: [TranscriptWord](), count: chunks.count)
-        var completed = 0
-        let maximumConcurrentRequests = 3
-        for batchStart in stride(from: 0, to: chunks.count, by: maximumConcurrentRequests) {
-            let batchEnd = min(chunks.count, batchStart + maximumConcurrentRequests)
-            try await withThrowingTaskGroup(of: (Int, [TranscriptWord]).self) { group in
-                for index in batchStart..<batchEnd {
-                    let chunk = chunks[index]
-                    group.addTask { (index, try await Self.transcribeChunk(chunk, index: index, total: chunks.count, settings: settings)) }
-                }
-                for try await (index, chunkWords) in group {
-                    results[index] = chunkWords
-                    completed += 1
-                    progress?(completed, chunks.count)
-                }
-            }
-        }
-        let words = Self.mergeOverlappingChunks(results)
-        guard !words.isEmpty else { throw MiMoError.invalidResponse("返回结果没有文字") }
-        return .init(assetID: videoURL.lastPathComponent, language: nil, duration: chunks.reduce(0) { max($0, $1.start + $1.duration) }, words: words)
-    }
-
-    private static func transcribeChunk(_ chunk: AudioChunker.Chunk, index: Int, total: Int, settings: MiMoSettings) async throws -> [TranscriptWord] {
-        var request = URLRequest(url: try MiMoHTTP.endpoint(settings, path: settings.asrPath), timeoutInterval: 600)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(settings.apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let audio = try Data(contentsOf: chunk.url).base64EncodedString()
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": settings.asrModel,
-            "messages": [["role": "user", "content": [
-                ["type": "input_audio", "input_audio": ["data": "data:audio/wav;base64,\(audio)"]]
-            ]]],
-            "asr_options": ["language": "auto"]
-        ])
-        let data: Data
-        do { data = try await retrying { try await MiMoHTTP.checkedData(for: request) } }
-        catch { throw MiMoError.chunkFailed(index + 1, total, error.localizedDescription) }
-        do {
-            let text = try parseText(data)
-            return estimatedWords(text: text, start: chunk.start, duration: chunk.duration, speechRanges: chunk.speechRanges)
-        } catch MiMoError.invalidResponse(let reason) where reason == "没有转写文字" {
-            return []
-        }
-    }
-
+struct AIASRClient: Sendable {
+    let settings: AISettings
     static func parseText(_ data: Data) throws -> String {
         let response = try JSONDecoder().decode(ChatResponse.self, from: data)
-        guard let text = response.choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { throw MiMoError.invalidResponse("没有转写文字") }
+        guard let text = response.choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { throw AIError.invalidResponse("没有转写文字") }
         return text
     }
 
@@ -488,8 +672,8 @@ struct MiMoASRClient: Sendable {
     }
 
     static func isRetryable(_ error: Error) -> Bool {
-        if case MiMoError.rateLimited = error { return true }
-        if case MiMoError.server(let code, _) = error { return code >= 500 }
+        if case AIError.rateLimited = error { return true }
+        if case AIError.server(let code, _) = error { return code >= 500 }
         guard let urlError = error as? URLError else { return false }
         return [.timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost, .dnsLookupFailed].contains(urlError.code)
     }
@@ -510,26 +694,26 @@ enum AudioChunker {
         let asset = AVURLAsset(url: videoURL)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first,
               let description = try await track.load(.formatDescriptions).first,
-              let basic = CMAudioFormatDescriptionGetStreamBasicDescription(description) else { throw MiMoError.invalidResponse("视频没有可读取的音轨") }
+              let basic = CMAudioFormatDescriptionGetStreamBasicDescription(description) else { throw AIError.invalidResponse("视频没有可读取的音轨") }
         let sampleRate = Int(basic.pointee.mSampleRate.rounded())
         let channels = Int(basic.pointee.mChannelsPerFrame)
-        guard sampleRate > 0, channels > 0 else { throw MiMoError.invalidResponse("音轨采样率或声道无效") }
+        guard sampleRate > 0, channels > 0 else { throw AIError.invalidResponse("音轨采样率或声道无效") }
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: [AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false])
         reader.add(output)
-        guard reader.startReading() else { throw reader.error ?? MiMoError.invalidResponse("无法读取音轨") }
+        guard reader.startReading() else { throw reader.error ?? AIError.invalidResponse("无法读取音轨") }
         let blockAlign = channels * 2
-        // MiMo returns text without word timestamps. Short overlapping windows
+        // 远程 ASR 只回文本、没有逐词时间戳。短的重叠窗口
         // reduce boundary omissions and keep local VAD alignment tight.
         var pcm = Data()
         while let sample = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(sample) {
             let length = CMBlockBufferGetDataLength(block)
             var data = Data(count: length)
             let status = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
-            guard status == kCMBlockBufferNoErr else { throw MiMoError.invalidResponse("无法读取音频数据") }
+            guard status == kCMBlockBufferNoErr else { throw AIError.invalidResponse("无法读取音频数据") }
             pcm.append(data)
         }
-        guard reader.status == .completed else { throw reader.error ?? MiMoError.invalidResponse("音轨读取失败") }
+        guard reader.status == .completed else { throw reader.error ?? AIError.invalidResponse("音轨读取失败") }
         let windowBytes = sampleRate * blockAlign * 8
         let strideBytes = sampleRate * blockAlign * 6
         var chunks: [Chunk] = [], offset = 0
@@ -618,7 +802,7 @@ enum AudioWaveform {
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: [AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false])
         reader.add(output)
-        guard reader.startReading() else { throw reader.error ?? MiMoError.invalidResponse("无法读取音频波形") }
+        guard reader.startReading() else { throw reader.error ?? AIError.invalidResponse("无法读取音频波形") }
         var result = Array(repeating: Float.zero, count: count), frameCursor = 0
         while let sample = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(sample) {
             let length = CMBlockBufferGetDataLength(block)
@@ -638,7 +822,7 @@ enum AudioWaveform {
                 frameCursor += frames
             }
         }
-        guard reader.status == .completed else { throw reader.error ?? MiMoError.invalidResponse("音频波形读取失败") }
+        guard reader.status == .completed else { throw reader.error ?? AIError.invalidResponse("音频波形读取失败") }
         let peak = result.max() ?? 0
         return peak > 0 ? result.map { $0 / peak } : result
     }
@@ -664,22 +848,22 @@ enum VideoThumbnails {
     }
 }
 
-struct MiMoEditClient: Sendable {
-    let settings: MiMoSettings
+struct AIEditClient: Sendable {
+    let settings: AISettings
     func analyze(words: [TranscriptWord]) async throws -> [EditSuggestion] {
         let transcript = words.map { "id=\($0.id.uuidString) [\($0.start)-\($0.end)] \($0.text)" }.joined(separator: "\n")
-        var request = try MiMoClient(settings: settings).authorizedRequest(path: "/chat/completions")
+        var request = try AIClient(settings: settings).authorizedRequest(path: "/chat/completions")
         let schema = "返回纯 JSON 数组。每项字段：type(filler|correction|repetition|invalid), title, reason, confidence(0-1), word_ids(UUID数组), start, end。只引用给出的UUID，不要直接执行删除。"
         request.httpBody = try JSONSerialization.data(withJSONObject: settings.requestBody(["model": settings.model, "temperature": 0.1, "response_format": ["type": "json_object"], "messages": [["role": "system", "content": "你负责找出口播中的口误、自我纠正、重复表达、填充词和无效内容。\(schema)"], ["role": "user", "content": transcript]]]))
-        let data = try await MiMoHTTP.checkedData(for: request)
+        let data = try await AIHTTP.checkedData(for: request)
         let envelope = try JSONDecoder().decode(ChatEnvelope.self, from: data)
-        guard let raw = envelope.choices.first?.message.content else { throw MiMoError.invalidResponse("没有分析内容") }
+        guard let raw = envelope.choices.first?.message.content else { throw AIError.invalidResponse("没有分析内容") }
         let cleaned = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         let content = Data(cleaned.utf8)
         let items: [SuggestionDTO]
         if let direct = try? JSONDecoder().decode([SuggestionDTO].self, from: content) { items = direct }
         else if let wrapped = try? JSONDecoder().decode(Wrapper.self, from: content) { items = wrapped.suggestions }
-        else { throw MiMoError.invalidResponse(cleaned) }
+        else { throw AIError.invalidResponse(cleaned) }
         let validIDs = Set(words.map(\.id))
         return items.compactMap { dto in
             let ids = dto.word_ids.compactMap(UUID.init(uuidString:)).filter(validIDs.contains)
@@ -693,7 +877,9 @@ struct MiMoEditClient: Sendable {
 }
 
 enum KeychainStore {
-    private static let service = "com.codecut.mimo"
+    private static let service = "com.codecut"
+    /// 旧版本用的是 com.codecut.mimo，读取时回退一次，避免用户重新填 Key。
+    private static let legacyServices = ["com.codecut.mimo"]
     nonisolated(unsafe) private static var sessionValues: [String: String] = [:]
     private static let lock = NSLock()
 
@@ -719,10 +905,22 @@ enum KeychainStore {
     }
     static func read(_ key: String) -> String? {
         if let value = lock.withLock({ sessionValues[key] }) { return value }
+        if let value = readFromKeychain(service: service, key: key) {
+            lock.withLock { sessionValues[key] = value }
+            return value
+        }
+        for legacy in legacyServices {
+            guard let value = readFromKeychain(service: legacy, key: key), !value.isEmpty else { continue }
+            try? save(value, key: key)
+            lock.withLock { sessionValues[key] = value }
+            return value
+        }
+        return nil
+    }
+    private static func readFromKeychain(service: String, key: String) -> String? {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: key, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data, let value = String(data: data, encoding: .utf8) else { return nil }
-        lock.withLock { sessionValues[key] = value }
         return value
     }
 }

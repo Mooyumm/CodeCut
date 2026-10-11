@@ -4,38 +4,61 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    enum WorkspacePage: String { case talking = "口播", storyboard = "分镜" }
+    /// 文稿排在最前面：一个项目先有 brief 和稿子，才轮到剪和配画面。
+    enum WorkspacePage: String, CaseIterable { case documents = "文稿", talking = "口播", broll = "B-roll", storyboard = "分镜", music = "音乐参考" }
     @Environment(EditorModel.self) private var model
     @AppStorage("projectSidebarCollapsed") private var projectSidebarCollapsed = false
     @State private var dropTargeted = false
-    @State private var workspacePage = WorkspacePage.talking
+    @State private var workspacePage: WorkspacePage = CommandLine.arguments.contains("--music-reference") ? .music : .documents
+    @State private var musicLibrary = MusicReferenceLibrary()
 
     var body: some View {
         @Bindable var model = model
         VStack(spacing: 0) {
-            TopBar(projectSidebarCollapsed: $projectSidebarCollapsed)
-            TaskBanner()
-            Divider()
-            Group {
-                if workspacePage == .talking { talkingWorkspace }
-                else { StoryboardWorkspace(projectSidebarCollapsed: $projectSidebarCollapsed) }
+            if workspacePage != .music {
+                TopBar(projectSidebarCollapsed: $projectSidebarCollapsed)
+                TaskBanner()
+                Divider()
             }
+            Group {
+                switch workspacePage {
+                case .documents: DocumentsWorkspace(projectSidebarCollapsed: $projectSidebarCollapsed)
+                case .talking: talkingWorkspace
+                case .broll: BrollWorkspace(projectSidebarCollapsed: $projectSidebarCollapsed)
+                case .storyboard: StoryboardWorkspace(projectSidebarCollapsed: $projectSidebarCollapsed)
+                case .music: MusicReferenceWorkspace(library: musicLibrary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .layoutPriority(1)
             WorkspaceBottomBar(page: $workspacePage)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(red: 0.075, green: 0.082, blue: 0.09))
         .tint(Color(red: 0.15, green: 0.48, blue: 0.82))
         .preferredColorScheme(.dark)
-        .overlay { if dropTargeted { RoundedRectangle(cornerRadius: 14).stroke(.indigo, lineWidth: 3).padding(8).allowsHitTesting(false) } }
-        .dropDestination(for: URL.self) { urls, _ in guard let url = urls.first else { return false }; Task { await model.importVideo(url) }; return true } isTargeted: { dropTargeted = $0 }
-        .fileImporter(isPresented: $model.showImporter, allowedContentTypes: [.movie]) { result in if case .success(let url) = result { Task { await model.importVideo(url) } } }
-        .fileImporter(isPresented: $model.showProjectImporter, allowedContentTypes: [.json, .data]) { result in
-            switch result {
-            case .success(let url):
-                Task { do { try await model.openProject(url) } catch { model.taskState = .failed(error.localizedDescription) } }
-            case .failure(let error): model.taskState = .failed(error.localizedDescription)
-            }
+        .onChange(of: workspacePage) { _, page in
+            if page == .music { model.player.pause() }
         }
-        .fileImporter(isPresented: $model.showRelinkImporter, allowedContentTypes: [.movie]) { result in if case .success(let url) = result { Task { await model.relinkSource(url) } } }
+        .overlay { if dropTargeted { RoundedRectangle(cornerRadius: 14).stroke(.indigo, lineWidth: 3).padding(8).allowsHitTesting(false) } }
+        // 顶层的拖入按当前工作区分流：在 B-roll 页拖进来的是 B-roll 素材，
+        // 不能当口播的主视频导进去（B-roll 页自己也有接收区，这里是兜底）。
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !urls.isEmpty else { return false }
+            if workspacePage == .music {
+                Task { await musicLibrary.importFiles(urls) }
+            } else if workspacePage == .broll {
+                Task { await model.addBrollAssetsFromDrop(urls) }
+            } else if let url = urls.first {
+                Task { await model.importVideo(url) }
+            }
+            return true
+        } isTargeted: { dropTargeted = $0 }
+        .onChange(of: model.showRelinkImporter) { _, needed in
+            guard needed else { return }
+            model.showRelinkImporter = false
+            model.promptRelinkSource()
+        }
         .sheet(isPresented: $model.showSettings) {
             SettingsView(onClose: { model.showSettings = false })
                 .environment(model)
@@ -70,7 +93,7 @@ struct ProjectSidebar: View {
             HStack {
                 Text("项目").font(.headline)
                 Spacer()
-                Button { model.newProject(); model.showImporter = true } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("新建项目")
+                Button { model.promptNewProject() } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("新建项目")
                 Button(action: onCollapse) { Image(systemName: "chevron.left") }.buttonStyle(.plain).help("折叠项目栏")
             }.padding(12)
             Divider()
@@ -92,10 +115,13 @@ struct ProjectSidebar: View {
                                 Button("移到废纸篓", systemImage: "trash", role: .destructive) { deleteURL = url }
                             }
                     }
-                }.padding(8).id(refreshID)
+                }.padding(8).id(refreshID).id(model.projectListRevision)
             }
             Divider()
-            Button { model.showProjectImporter = true } label: { Label("打开其他项目…", systemImage: "folder") }.buttonStyle(.plain).padding(12)
+            VStack(alignment: .leading, spacing: 2) {
+                Button { model.promptNewProject() } label: { Label("新建项目…", systemImage: "plus.rectangle.on.folder") }.buttonStyle(.plain).padding(.horizontal, 12).padding(.top, 10)
+                Button { model.promptOpenProject() } label: { Label("打开其他项目…", systemImage: "folder") }.buttonStyle(.plain).padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 4)
+            }
         }.background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
             .alert("重命名项目", isPresented: Binding(get: { renameURL != nil }, set: { if !$0 { renameURL = nil } })) {
                 TextField("项目名称", text: $renameText)
@@ -131,6 +157,10 @@ private struct TopBar: View {
             Text(model.projectName).foregroundStyle(.secondary).lineLimit(1)
             if model.hasUnsavedChanges { Circle().fill(.orange).frame(width: 6, height: 6).help("有未保存更改") }
             Spacer()
+            Button { model.promptNewProject() } label: { Label("新建", systemImage: "plus") }.help("新建项目 ⌘N")
+            Button { model.promptImportVideo() } label: { Label("导入", systemImage: "square.and.arrow.down") }.help("导入素材到当前项目 ⌘I")
+            Button { model.promptOpenProject() } label: { Image(systemName: "folder") }.help("打开项目 ⌘O")
+            Divider().frame(height: 18)
             Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }.keyboardShortcut("z").disabled(!model.canUndo).help("撤销 ⌘Z")
             Button { model.redo() } label: { Image(systemName: "arrow.uturn.forward") }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!model.canRedo).help("重做 ⇧⌘Z")
             Divider().frame(height: 18)
@@ -185,7 +215,7 @@ private struct ChatPanel: View {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(model.messages) { message in
                             if message.role == .status {
-                                Label(message.text, systemImage: message.text.hasPrefix("MiMo 正在") ? "ellipsis.circle" : (message.text.hasPrefix("请求失败") ? "exclamationmark.circle" : "checkmark.circle"))
+                                Label(message.text, systemImage: message.text.contains("正在") ? "ellipsis.circle" : (message.text.hasPrefix("请求失败") ? "exclamationmark.circle" : "checkmark.circle"))
                                     .font(.caption)
                                     .foregroundStyle(message.text.hasPrefix("请求失败") ? Color.red : Color.secondary)
                                     .frame(maxWidth: .infinity)
@@ -203,11 +233,11 @@ private struct ChatPanel: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 8) {
-                TextField("告诉 MiMo 你想如何剪辑…", text: $model.prompt, axis: .vertical)
+                TextField("告诉\(AISettings.current.serviceName)你想如何剪辑…", text: $model.prompt, axis: .vertical)
                     .textFieldStyle(.plain).font(.system(size: 15)).lineLimit(2...6).frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
                     .onSubmit { Task { await model.sendPrompt() } }
                 HStack {
-                    Label("MiMo V2.5", systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
+                    Label(AISettings.current.serviceName, systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Text("↩ 发送").font(.caption2).foregroundStyle(.tertiary)
                     Button { Task { await model.sendPrompt() } } label: { Image(systemName: model.isWorking ? "ellipsis" : "arrow.up").frame(width: 24, height: 24) }
@@ -223,21 +253,46 @@ private struct ChatPanel: View {
 
 private struct SuggestionCard: View {
     @Environment(EditorModel.self) private var model; let item: EditSuggestion
+    /// 鱼骨图上的“需要你选”的节点：成段重录，可能是两种语气。
+    private var isToneChoice: Bool { item.repetitionKind == .alternateTake }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Label(item.title, systemImage: "wand.and.stars").font(.subheadline.weight(.semibold)); Spacer(); Text("\(Int(item.confidence * 100))%").font(.caption).foregroundStyle(.secondary) }
+            HStack { Label(item.title, systemImage: isToneChoice ? "arrow.triangle.branch" : "wand.and.stars").font(.subheadline.weight(.semibold)); Spacer(); Text("\(Int(item.confidence * 100))%").font(.caption).foregroundStyle(.secondary) }
             Text(item.reason).font(.caption).foregroundStyle(.secondary)
-            Text(String(format: "%.2f–%.2f 秒", item.start, item.end)).font(.caption2).monospacedDigit()
-            HStack {
-                Button("试听") { model.preview(.init(start: item.start, end: item.end)) }
-                Spacer()
-                Button(item.type == .repetition ? "保留两段" : "保留") { model.decide(item.id, delete: false) }
-                Button(item.type == .repetition ? "删除标记段" : "删除") { model.decide(item.id, delete: true) }
-                    .buttonStyle(.borderedProminent).tint(.red)
+            if isToneChoice {
+                toneVersion(title: "较早录的这一版", wordIDs: item.wordIDs, keepEarlier: true)
+                toneVersion(title: "后面重录的这一版", wordIDs: item.retainedWordIDs ?? [], keepEarlier: false)
+                Text("两版都留着，选好之后另一版才会被剪掉。").font(.caption2).foregroundStyle(.tertiary)
+            } else {
+                Text(String(format: "%.2f–%.2f 秒", item.start, item.end)).font(.caption2).monospacedDigit()
+                HStack {
+                    Button("试听") { model.preview(.init(start: item.start, end: item.end)) }
+                    Spacer()
+                    Button(item.type == .repetition ? "保留两段" : "保留") { model.decide(item.id, delete: false) }
+                    Button(item.type == .repetition ? "删除标记段" : "删除") { model.decide(item.id, delete: true) }
+                        .buttonStyle(.borderedProminent).tint(.red)
+                }
             }
         }.cardStyle()
             .contentShape(Rectangle())
             .onTapGesture { model.focusSuggestion(item) }
+    }
+
+    private func toneVersion(title: String, wordIDs: [UUID], keepEarlier: Bool) -> some View {
+        let range = model.timeRange(for: wordIDs)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(title).font(.caption.weight(.semibold))
+                Text(preciseTimecode(range.start)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                Spacer()
+                Button("试听") { model.preview(range) }.controlSize(.mini)
+                Button("留这版") { model.chooseAlternateTake(item.id, keepEarlier: keepEarlier) }
+                    .buttonStyle(.borderedProminent).controlSize(.mini)
+            }
+            Text(model.previewText(for: wordIDs)).font(.system(size: 13)).foregroundStyle(.secondary)
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -268,13 +323,22 @@ private struct AssetsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack { Image(systemName: "film").font(.title2); VStack(alignment: .leading, spacing: 3) { Text(url.lastPathComponent).lineLimit(1); Text("\(timecode(model.duration)) · \(String(format: "%.2f", model.frameRate)) fps").font(.caption).foregroundStyle(.secondary) }; Spacer() }
                     HStack {
-                        Button { Task { await model.resegmentWithMiMo() } } label: { Label("重新断句", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                        Button { model.resegment() } label: { Label("重新断句", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                            .help("按文稿标点和真实停顿重新断句，全部在本机完成")
                             .disabled(model.isWorking)
                         Button { Task { await model.transcribe(forceRecognition: true) } } label: { Label("重新识别", systemImage: "waveform.badge.mic") }
                             .buttonStyle(.borderedProminent).disabled(model.isWorking)
                     }
                 }.padding().background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-            } else { ContentUnavailableView("尚无素材", systemImage: "film.stack", description: Text("拖入视频或点击顶部“导入”")) }
+            } else {
+                ContentUnavailableView {
+                    Label("尚无素材", systemImage: "film.stack")
+                } description: {
+                    Text("把视频拖进窗口，或直接导入素材")
+                } actions: {
+                    Button("导入视频") { model.promptImportVideo() }.buttonStyle(.borderedProminent)
+                }
+            }
             Spacer()
         }.padding(12)
     }
@@ -316,7 +380,8 @@ private struct TranscriptView: View {
                     HStack(spacing: 8) {
                         Label("字幕", systemImage: "captions.bubble").font(.subheadline.weight(.semibold))
                         Spacer()
-                        Button("重新断句") { Task { await model.resegmentWithMiMo() } }
+                        Button("重新断句") { model.resegment() }
+                            .help("按文稿标点和真实停顿重新断句，全部在本机完成")
                             .disabled(model.videoURL == nil || model.isWorking)
                         if batchMode {
                             Button("全选") { model.selectAllSubtitles() }
@@ -339,7 +404,7 @@ private struct TranscriptView: View {
                             Text("已清空字幕，可以使用本机缓存重新生成。")
                         } actions: {
                             HStack {
-                                Button("重新断句") { Task { await model.resegmentWithMiMo() } }
+                                Button("重新断句") { model.resegment() }
                                 Button("重新识别") { Task { await model.transcribe(forceRecognition: true) } }
                                     .buttonStyle(.borderedProminent)
                             }.disabled(model.videoURL == nil || model.isWorking)
@@ -376,8 +441,9 @@ private struct EditableCueRow: View {
     @State private var isEditing = false
     init(cue: SubtitleCue, batchMode: Bool) { self.cue = cue; self.batchMode = batchMode; _text = State(initialValue: cue.text) }
     var body: some View {
-        let repetition = model.suggestions.first { $0.type == .repetition && $0.state == .pending && !Set($0.wordIDs).isDisjoint(with: cue.wordIDs) }
-        let retained = repetition == nil && model.suggestions.contains { $0.type == .repetition && $0.state == .pending && !Set($0.retainedWordIDs ?? []).isDisjoint(with: cue.wordIDs) }
+        let repetition = model.suggestions.first { $0.type == .repetition && $0.state == .pending && $0.repetitionKind != .alternateTake && !Set($0.wordIDs).isDisjoint(with: cue.wordIDs) }
+        let toneChoice = model.suggestions.first { $0.type == .repetition && $0.state == .pending && $0.repetitionKind == .alternateTake && (!Set($0.wordIDs).isDisjoint(with: cue.wordIDs) || !Set($0.retainedWordIDs ?? []).isDisjoint(with: cue.wordIDs)) }
+        let retained = repetition == nil && toneChoice == nil && model.suggestions.contains { $0.type == .repetition && $0.state == .pending && !Set($0.retainedWordIDs ?? []).isDisjoint(with: cue.wordIDs) }
         let transientHighlight = model.isTransientlyHighlighted(cue)
         HStack(alignment: .center, spacing: 7) {
             if batchMode {
@@ -397,8 +463,12 @@ private struct EditableCueRow: View {
             } else {
                 HStack(spacing: 6) {
                     proposedText.font(.system(size: 15)).frame(maxWidth: .infinity, alignment: .leading)
-                    if let repetition {
-                        Label("重复", systemImage: "arrow.trianglehead.2.clockwise.rotate.90").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                    if let toneChoice {
+                        Label("语气备选", systemImage: "arrow.triangle.branch").font(.caption2.weight(.semibold)).foregroundStyle(.purple)
+                        Button("留这版") { model.chooseAlternateTake(toneChoice.id, keepEarlier: !Set(toneChoice.wordIDs).isDisjoint(with: cue.wordIDs)) }
+                            .buttonStyle(.borderedProminent).controlSize(.mini).help("留下这条字幕所属的这一版语气，另一版会被剪掉")
+                    } else if let repetition {
+                        Label("读错重录", systemImage: "arrow.trianglehead.2.clockwise.rotate.90").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
                         Button("保留") { model.decideRepetitionSegment(repetition.id, wordIDs: cue.wordIDs, delete: false) }
                             .buttonStyle(.bordered).controlSize(.mini).help("只保留当前这条字幕")
                         Button(role: .destructive) { model.decideRepetitionSegment(repetition.id, wordIDs: cue.wordIDs, delete: true) } label: {
@@ -414,7 +484,7 @@ private struct EditableCueRow: View {
             }
         }.padding(6)
             .background(transientHighlight ? Color.orange.opacity(0.32 * model.transientHighlightOpacity) : (model.isSelected(cue) ? Color.accentColor.opacity(0.18) : .clear), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(transientHighlight ? Color.orange.opacity(model.transientHighlightOpacity) : (retained ? Color.mint : .clear), lineWidth: 2))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(transientHighlight ? Color.orange.opacity(model.transientHighlightOpacity) : (retained ? Color.mint : (toneChoice != nil ? Color.purple : .clear)), lineWidth: 2))
     }
     private func commit() { model.editSubtitle(cue, text: text); isEditing = false }
     private var proposedText: Text {
@@ -500,7 +570,10 @@ struct ViewerPanel: View {
                 }
                 if model.videoURL == nil {
                     Color.black
-                    VStack(spacing: 12) { Image(systemName: "arrow.down.doc").font(.largeTitle); Text("将视频拖入项目或点击“导入”").foregroundStyle(.secondary) }
+                    VStack(spacing: 10) {
+                        Image(systemName: "arrow.down.doc").font(.largeTitle)
+                        Text(model.projectURL == nil ? "还没有项目：先用左上角“＋”新建项目" : "将视频拖入项目，或点击顶部“导入”").foregroundStyle(.secondary)
+                    }
                 }
             }.clipShape(RoundedRectangle(cornerRadius: 8)).padding(12)
         }
@@ -599,16 +672,29 @@ private struct TimelinePanel: View {
 
     @ViewBuilder
     private var timelineAnalysisControls: some View {
+        Picker("停顿", selection: Binding(get: { model.pausePlan }, set: { model.pausePlan = $0 })) {
+            ForEach(PausePlan.allCases, id: \.self) { Text($0.label).tag($0) }
+        }
+        .frame(width: 120)
+        .controlSize(.small)
+        .help("剪掉气口后，每句话、每个章节之间保留多少静音。当前：\(model.pausePlan.summary)")
+        Picker("头尾", selection: Binding(get: { model.edgeTrim }, set: { model.edgeTrim = $0 })) {
+            ForEach(EdgeTrimPlan.allCases, id: \.self) { Text($0.label).tag($0) }
+        }
+        .frame(width: 104)
+        .controlSize(.small)
+        .help("片头片尾没有台词的部分：\(model.edgeTrim.summary)。留白长度跟随“停顿”档位，比如标准档前后各留 0.3 秒。")
         Picker("气口", selection: Binding(get: { model.breathMode }, set: { model.breathMode = $0 })) {
             ForEach(EditorModel.BreathMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }
-        .frame(width: 150)
+        .frame(width: 118)
         .controlSize(.small)
         Picker("去重", selection: Binding(get: { model.dedupeMode }, set: { model.dedupeMode = $0 })) {
             ForEach(EditorModel.DedupeMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }
-        .frame(width: 150)
+        .frame(width: 118)
         .controlSize(.small)
+        .help("自动去重只处理“读错重录”：分支只有一句或半句，直接保留最后一遍。成段的整段重录可能是在试不同语气，不会被自动删掉，会留给你逐条选留哪一版。")
         Button("执行") { model.executeDedupe() }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
@@ -774,7 +860,7 @@ private struct WaveformShape: Shape {
 }
 
 struct PanelHeader: View { let title: String, icon: String; var body: some View { HStack { Label(title, systemImage: icon).font(.headline.weight(.semibold)); Spacer() }.padding(.horizontal, 12).frame(height: 42).background(Color(red: 0.105, green: 0.115, blue: 0.125)) } }
-private struct NativePlayerView: NSViewRepresentable {
+struct NativePlayerView: NSViewRepresentable {
     let player: AVPlayer
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()

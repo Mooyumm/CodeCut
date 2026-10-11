@@ -32,7 +32,7 @@ final class WhisperTranscriber {
         let results = try await pipe.transcribe(audioPath: videoURL.path, decodeOptions: options)
         let timings = results.flatMap(\.allWords).sorted { $0.start < $1.start }
         let words = Self.characterTimings(from: timings)
-        guard !words.isEmpty else { throw MiMoError.invalidResponse("WhisperKit 没有返回逐字时间戳") }
+        guard !words.isEmpty else { throw AIError.invalidResponse("WhisperKit 没有返回逐字时间戳") }
         return TranscriptDocument(
             assetID: videoURL.lastPathComponent,
             language: results.first?.language,

@@ -1,6 +1,7 @@
 .DS_Store
 .build/
 DerivedData/
+DerivedData-*/
 *.xcuserstate
 xcuserdata/
 
@@ -10,3 +11,11 @@ migration_bundle/
 # Rebuildable release artifacts
 CodeCutMac/Release/*.zip
 CodeCutMac/Release/*.sha256
+CodeCutMac/Release/
+dist/
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.key

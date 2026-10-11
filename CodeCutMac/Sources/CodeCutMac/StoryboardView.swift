@@ -8,12 +8,15 @@ struct WorkspaceBottomBar: View {
         HStack {
             Spacer()
             Picker("工作区", selection: $page) {
+                Text("文稿").tag(ContentView.WorkspacePage.documents)
                 Text("口播").tag(ContentView.WorkspacePage.talking)
+                Text("B-roll").tag(ContentView.WorkspacePage.broll)
                 Text("分镜").tag(ContentView.WorkspacePage.storyboard)
+                Text("音乐参考").tag(ContentView.WorkspacePage.music)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 220)
+            .frame(width: 500)
             Spacer()
         }
         .frame(height: 46)
@@ -22,6 +25,8 @@ struct WorkspaceBottomBar: View {
     }
 }
 
+/// 分镜工作区：分镜稿 + 预览 + 分镜时间轴。
+/// brief 和文字稿在「文稿」工作区；分镜稿两个页面共用同一份数据。
 struct StoryboardWorkspace: View {
     @Binding var projectSidebarCollapsed: Bool
     var body: some View {
@@ -35,10 +40,48 @@ struct StoryboardWorkspace: View {
                 StoryboardTimelinePanel().frame(minHeight: 300, idealHeight: 340)
             }.frame(minWidth: 560)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-private struct StoryboardTablePanel: View {
+/// 分镜页左侧面板：默认就是文稿页那份分镜稿（同一份 `scriptTable`，改哪边都同步）。
+/// AI 生成的分镜参考另开一个页签，因为它的列和分镜稿不是一回事。
+struct StoryboardTablePanel: View {
+    @State private var mode = Mode.script
+
+    enum Mode: String, CaseIterable {
+        case script = "分镜稿"
+        case aiReference = "AI 分镜参考"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Picker("分镜来源", selection: $mode) {
+                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 240)
+                if mode == .script {
+                    Text("和文稿页的「分镜稿」是同一份，两边同步；「时间」列按口播逐行对齐")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12).frame(height: 40)
+            .background(Color(red: 0.105, green: 0.115, blue: 0.125))
+            Divider()
+            switch mode {
+            case .script: ScriptTablePanel()
+            case .aiReference: AIStoryboardTablePanel()
+            }
+        }
+    }
+}
+
+/// AI 生成的分镜参考表：按剪辑后的字幕设计实拍空镜 / MG 动画，列比手写分镜稿细。
+struct AIStoryboardTablePanel: View {
     @Environment(EditorModel.self) private var model
     @State private var confirmReplace = false
     @State private var generatedPrompt = ""
@@ -104,9 +147,11 @@ private struct StoryboardTablePanel: View {
     @MainActor private func generatePrompt() async {
         guard let id = model.selectedStoryboardID, let item = model.storyboards.first(where: { $0.id == id }) else { return }
         generatingPrompt = true
-        model.taskState = .working("DeepSeek 正在生成详细 MG 动画提示词…")
+        let settings = AISettings.current
+        model.taskState = .working("\(settings.serviceName) 正在生成详细 MG 动画提示词…")
         do {
-            generatedPrompt = try await MiMoClient(settings: .deepSeek).generateDetailedStoryboardPrompt(item: item, subtitle: model.storyboardSubtitle(item), duration: model.storyboardOutputRange(item).duration)
+            try await settings.prepare()
+            generatedPrompt = try await AIClient(settings: settings).generateDetailedStoryboardPrompt(item: item, subtitle: model.storyboardSubtitle(item), duration: model.storyboardOutputRange(item).duration)
             showingPrompt = true
             model.taskState = .done("详细 MG 动画提示词已生成")
         } catch { model.taskState = .failed("提示词生成失败：\(error.localizedDescription)") }
@@ -116,7 +161,7 @@ private struct StoryboardTablePanel: View {
     private var promptSheet: some View {
         VStack(spacing: 12) {
             HStack {
-                Label("DeepSeek 详细 MG 动画提示词", systemImage: "wand.and.stars").font(.headline)
+                Label("\(AISettings.current.serviceName) 详细 MG 动画提示词", systemImage: "wand.and.stars").font(.headline)
                 Spacer()
                 Button("复制") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(generatedPrompt, forType: .string) }
                 Button("导出 TXT") { exportPrompt() }.buttonStyle(.borderedProminent)
@@ -167,12 +212,18 @@ private struct StoryboardTableRow: View {
     private func commit() { model.replaceStoryboard(draft) }
 }
 
-private struct StoryboardTimelinePanel: View {
+struct StoryboardTimelinePanel: View {
     @Environment(EditorModel.self) private var model
     @State private var pointsPerSecond = 24.0
     private let labelWidth = 92.0
+    private let trackHeight = 34.0
+    private let trackGap = 8.0
     private var duration: Double { model.outputDuration }
     private var canvasWidth: Double { max(760, labelWidth + duration * pointsPerSecond + 40) }
+    /// 已排好的 B-roll 按轨道分组，一条轨道一行。
+    private var brollTracks: [[BrollPlacement]] { model.brollPlacementTracks }
+    /// 上面五条轨（实拍／MG／CC／V1／A1）固定 266 高，B-roll 轨道往下长。
+    private var canvasHeight: Double { 266 + Double(brollTracks.count) * (trackHeight + trackGap) }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -181,8 +232,18 @@ private struct StoryboardTimelinePanel: View {
                 Button { model.seek(to: 0) } label: { Image(systemName: "backward.end.fill") }
                 Divider().frame(height: 18)
                 Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
-                Slider(value: $pointsPerSecond, in: 8...100).frame(width: 120)
+                Slider(value: $pointsPerSecond, in: 8...100).frame(width: 90)
                 Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
+                Divider().frame(height: 18)
+                Button("AI 排 B-roll", systemImage: "wand.and.stars") { Task { await model.autoPlaceBroll() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.scriptTable.isEmpty || model.brollAssets.isEmpty || model.isWorking)
+                    .help("按分镜稿的「镜头类型」和「分镜」描述，从 B-roll 库里挑素材排到时间线上：片段入点对上台词开始的时间，长度就是这条素材本身（从模型挑的入点播到素材结束），一条轨道放不下就再开一条。挑选由本机模型在本地筛出的候选里定夺，全部在本机完成。")
+                if !model.brollPlacements.isEmpty {
+                    Text("已排 \(model.brollPlacements.count) 条 / \(brollTracks.count) 轨").font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                    Button { model.clearBrollPlacements() } label: { Image(systemName: "trash") }
+                        .help("清掉排好的 B-roll 片段（也可以 ⌘Z 撤销）")
+                }
                 Spacer()
                 if !model.storyboardSelectedWordIDs.isEmpty { Text("已选字幕范围").font(.caption).foregroundStyle(.secondary); Button("清除选区") { model.storyboardSelectedWordIDs = []; model.storyboardSelectionAnchorID = nil } }
             }.padding(.horizontal, 12).frame(height: 38).background(.thinMaterial)
@@ -216,16 +277,36 @@ private struct StoryboardTimelinePanel: View {
                 RoundedRectangle(cornerRadius: 4).fill(Color(red: 0.18, green: 0.39, blue: 0.56)).frame(width: max(3, range.duration * pointsPerSecond - 2), height: 34).offset(x: labelWidth + start * pointsPerSecond + 1, y: 158)
                 RoundedRectangle(cornerRadius: 4).fill(Color(red: 0.16, green: 0.45, blue: 0.36)).frame(width: max(3, range.duration * pointsPerSecond - 2), height: 34).offset(x: labelWidth + start * pointsPerSecond + 1, y: 200)
             }
+            // 排好的 B-roll：一条轨道一行，片段左边缘就是这句台词开始的时间。
+            ForEach(Array(brollTracks.enumerated()), id: \.offset) { index, clips in
+                brollTrack(number: index + 1, clips: clips, y: 242 + Double(index) * (trackHeight + trackGap))
+            }
             let playhead = TimelineEngine.outputTime(for: model.currentTime, deleted: model.deletedRanges)
-            Rectangle().fill(Color.red).frame(width: 2, height: 226).offset(x: labelWidth + playhead * pointsPerSecond, y: 24)
+            Rectangle().fill(Color.red).frame(width: 2, height: canvasHeight - 40).offset(x: labelWidth + playhead * pointsPerSecond, y: 24)
         }
-        .frame(width: canvasWidth, height: 266, alignment: .topLeading)
+        .frame(width: canvasWidth, height: canvasHeight, alignment: .topLeading)
         .contentShape(Rectangle())
         .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { value in
             guard value.location.x >= labelWidth else { return }
             let output = min(duration, max(0, (value.location.x - labelWidth) / pointsPerSecond))
             model.seek(to: TimelineEngine.sourceTime(for: output, kept: model.keptRanges))
         })
+    }
+    /// 一条 B-roll 轨道：左边是轨道名，右边按成片时间铺片段。
+    private func brollTrack(number: Int, clips: [BrollPlacement], y: Double) -> some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.04)).frame(width: canvasWidth - labelWidth, height: trackHeight).offset(x: labelWidth, y: y)
+            Label("B-roll \(number)", systemImage: "film.stack").font(.caption.weight(.medium)).foregroundStyle(.white.opacity(0.68)).offset(x: 8, y: y + 9)
+            ForEach(clips) { clip in
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color(red: 0.86, green: 0.55, blue: 0.18).opacity(0.9))
+                    .frame(width: max(4, clip.duration * pointsPerSecond - 2), height: trackHeight)
+                    .overlay(Text(clip.name).font(.caption2.weight(.semibold)).foregroundStyle(.black.opacity(0.82)).lineLimit(1).padding(.horizontal, 6), alignment: .leading)
+                    .offset(x: labelWidth + clip.start * pointsPerSecond + 1, y: y)
+                    .onTapGesture { model.seek(to: TimelineEngine.sourceTime(for: clip.start, kept: model.keptRanges)) }
+                    .help("\(clip.name)｜第 \(clip.row + 1) 行｜\(ScriptTimeMatcher.clock(clip.start))–\(ScriptTimeMatcher.clock(clip.end))｜素材 \(ScriptTimeMatcher.clock(clip.sourceIn))–\(ScriptTimeMatcher.clock(clip.sourceOut))｜\(clip.reason)")
+            }
+        }
     }
     private func track(_ name: String, _ icon: String, _ y: Double) -> some View {
         ZStack(alignment: .topLeading) {

@@ -9,24 +9,44 @@
 		A10000000000000000000001 /* CodeCutApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* CodeCutApp.swift */; };
 		A10000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ContentView.swift */; };
 		A10000000000000000000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* Models.swift */; };
-		A10000000000000000000004 /* MiMoClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* MiMoClient.swift */; };
+		A10000000000000000000004 /* AIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* AIClient.swift */; };
 		A10000000000000000000005 /* ProjectExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ProjectExport.swift */; };
 		A10000000000000000000006 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* SettingsView.swift */; };
 		A10000000000000000000007 /* WhisperTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* WhisperTranscriber.swift */; };
 		A10000000000000000000009 /* StoryboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* StoryboardView.swift */; };
+		A10000000000000000000010 /* BrollAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* BrollAnalyzer.swift */; };
+		A10000000000000000000011 /* BrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* BrollView.swift */; };
+		A10000000000000000000012 /* LocalVLM.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* LocalVLM.swift */; };
+		A10000000000000000000013 /* ProductPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* ProductPicker.swift */; };
+		A10000000000000000000014 /* DocumentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* DocumentsView.swift */; };
+		A10000000000000000000016 /* ScriptTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* ScriptTable.swift */; };
+		A10000000000000000000018 /* BriefSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* BriefSource.swift */; };
+		A1000000000000000000001A /* BriefParsers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* BriefParsers.swift */; };
 		A10000000000000000000008 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = A11000000000000000000001 /* WhisperKit */; };
+		B10000000000000000000001 /* MusicReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001; };
+		B10000000000000000000002 /* MusicReferenceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A20000000000000000000001 /* CodeCutApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeCutApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		A20000000000000000000004 /* MiMoClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiMoClient.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* AIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIClient.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* ProjectExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectExport.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* WhisperTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperTranscriber.swift; sourceTree = "<group>"; };
 		A20000000000000000000008 /* StoryboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryboardView.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* BrollAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrollAnalyzer.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* BrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrollView.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* LocalVLM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVLM.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* ProductPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductPicker.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* DocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentsView.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* ScriptTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptTable.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* BriefSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefSource.swift; sourceTree = "<group>"; };
+		A2000000000000000000001B /* BriefParsers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefParsers.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* CodeCut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodeCut.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20000000000000000000001 /* MusicReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicReference.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* MusicReferenceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicReferenceView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -35,7 +55,7 @@
 
 /* Begin PBXGroup section */
 		A40000000000000000000001 = {isa = PBXGroup; children = (A40000000000000000000002 /* CodeCut */, A40000000000000000000003 /* Products */); sourceTree = "<group>"; };
-		A40000000000000000000002 /* CodeCut */ = {isa = PBXGroup; children = (A20000000000000000000001 /* CodeCutApp.swift */, A20000000000000000000002 /* ContentView.swift */, A20000000000000000000003 /* Models.swift */, A20000000000000000000004 /* MiMoClient.swift */, A20000000000000000000005 /* ProjectExport.swift */, A20000000000000000000006 /* SettingsView.swift */, A20000000000000000000007 /* WhisperTranscriber.swift */, A20000000000000000000008 /* StoryboardView.swift */); path = Sources/CodeCutMac; sourceTree = SOURCE_ROOT; };
+		A40000000000000000000002 /* CodeCut */ = {isa = PBXGroup; children = (A20000000000000000000001 /* CodeCutApp.swift */, A20000000000000000000002 /* ContentView.swift */, A20000000000000000000003 /* Models.swift */, A20000000000000000000004 /* AIClient.swift */, A20000000000000000000005 /* ProjectExport.swift */, A20000000000000000000006 /* SettingsView.swift */, A20000000000000000000007 /* WhisperTranscriber.swift */, A20000000000000000000008 /* StoryboardView.swift */, A20000000000000000000011 /* BrollAnalyzer.swift */, A20000000000000000000012 /* BrollView.swift */, A20000000000000000000013 /* LocalVLM.swift */, A20000000000000000000014 /* ProductPicker.swift */, A20000000000000000000015 /* DocumentsView.swift */, A20000000000000000000017 /* ScriptTable.swift */, A20000000000000000000019 /* BriefSource.swift */, A2000000000000000000001B /* BriefParsers.swift */, B20000000000000000000001, B20000000000000000000002); path = Sources/CodeCutMac; sourceTree = SOURCE_ROOT; };
 		A40000000000000000000003 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000010 /* CodeCut.app */); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
@@ -77,7 +97,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A60000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* CodeCutApp.swift in Sources */, A10000000000000000000002 /* ContentView.swift in Sources */, A10000000000000000000003 /* Models.swift in Sources */, A10000000000000000000004 /* MiMoClient.swift in Sources */, A10000000000000000000005 /* ProjectExport.swift in Sources */, A10000000000000000000006 /* SettingsView.swift in Sources */, A10000000000000000000007 /* WhisperTranscriber.swift in Sources */, A10000000000000000000009 /* StoryboardView.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* CodeCutApp.swift in Sources */, A10000000000000000000002 /* ContentView.swift in Sources */, A10000000000000000000003 /* Models.swift in Sources */, A10000000000000000000004 /* AIClient.swift in Sources */, A10000000000000000000005 /* ProjectExport.swift in Sources */, A10000000000000000000006 /* SettingsView.swift in Sources */, A10000000000000000000007 /* WhisperTranscriber.swift in Sources */, A10000000000000000000009 /* StoryboardView.swift in Sources */, A10000000000000000000010 /* BrollAnalyzer.swift in Sources */, A10000000000000000000011 /* BrollView.swift in Sources */, A10000000000000000000012 /* LocalVLM.swift in Sources */, A10000000000000000000013 /* ProductPicker.swift in Sources */, A10000000000000000000014 /* DocumentsView.swift in Sources */, A10000000000000000000016 /* ScriptTable.swift in Sources */, A10000000000000000000018 /* BriefSource.swift in Sources */, A1000000000000000000001A /* BriefParsers.swift in Sources */, B10000000000000000000001, B10000000000000000000002); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCLocalSwiftPackageReference section */

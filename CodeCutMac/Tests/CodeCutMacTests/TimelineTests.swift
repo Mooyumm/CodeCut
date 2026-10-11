@@ -61,6 +61,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 
 @MainActor @Test func cleanupShortFragmentsCutsOnlyInternalIslandsAndCanUndo() {
     let model = EditorModel()
+    model.pausePlan = .off   // 本用例只关心碎片清理，先关掉“留停顿”
     model.duration = 4
     model.trimEnd = 4
     model.breaths = [
@@ -77,6 +78,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 
 @MainActor @Test func deletingBreathRipplesTimelineAndCanUndo() {
     let model = EditorModel()
+    model.pausePlan = .off   // 本用例只关心时间线回缩，先关掉“留停顿”
     model.duration = 4
     model.trimEnd = 4
     let breath = BreathCandidate(start: 1, end: 2, leftText: "前", rightText: "后")
@@ -89,13 +91,13 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(model.breaths[0].state == .pending)
 }
 
-@Test func parsesOfficialMiMoASRResponse() throws {
+@Test func parsesOfficialASRResponse() throws {
     let data = Data(#"{"choices":[{"message":{"content":"你好世界"}}]}"#.utf8)
-    #expect(try MiMoASRClient.parseText(data) == "你好世界")
+    #expect(try AIASRClient.parseText(data) == "你好世界")
 }
 
 @Test func rejectsASRWithoutText() {
-    #expect(throws: (any Error).self) { try MiMoASRClient.parseText(Data(#"{"choices":[]}"#.utf8)) }
+    #expect(throws: (any Error).self) { try AIASRClient.parseText(Data(#"{"choices":[]}"#.utf8)) }
 }
 
 @Test func exportsEscapedSRTAndFCPXML() {
@@ -123,7 +125,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     let first = SubtitleCue(text: "租房空间", start: 1, end: 5, wordIDs: [UUID(), UUID()])
     let second = SubtitleCue(text: "需要灵活布置", start: 5, end: 10, wordIDs: [UUID(), UUID()])
     let raw = #"{"items":[{"startIndex":0,"endIndex":1,"type":"MG 动画","description":"平面户型缩放","composition":"俯视","movement":"缓慢推进","elements":"户型线框","notes":"蓝白配色"}]}"#
-    let items = try MiMoClient.parseStoryboards(raw, cues: [first, second])
+    let items = try AIClient.parseStoryboards(raw, cues: [first, second])
     #expect(items.count == 1)
     #expect(items[0].kind == .motionGraphics)
     #expect(items[0].wordIDs == first.wordIDs + second.wordIDs)
@@ -175,7 +177,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 
 @Test func detailedStoryboardPromptInputContainsTimingAndAnimationDirection() {
     let item = StoryboardItem(kind: .motionGraphics, wordIDs: [], fallbackStart: 1, fallbackEnd: 4.5, description: "数字放大", composition: "居中", cameraMovement: "缓慢推进", elements: "850、箭头、参数卡片", notes: "蓝色科技风")
-    let input = MiMoClient.storyboardPromptInput(item: item, subtitle: "亮度达到850流明", duration: 3.5)
+    let input = AIClient.storyboardPromptInput(item: item, subtitle: "亮度达到850流明", duration: 3.5)
     #expect(input.contains("3.50 秒"))
     #expect(input.contains("亮度达到850流明"))
     #expect(input.contains("850、箭头、参数卡片"))
@@ -195,14 +197,14 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     let valid = UUID()
     let unknown = UUID()
     let raw = #"{"corrections":[{"id":"\#(valid.uuidString)","text":"大眼橙"},{"id":"\#(unknown.uuidString)","text":"不能加入"}]}"#
-    let corrections = try MiMoClient.parseCorrections(raw, validIDs: [valid])
+    let corrections = try AIClient.parseCorrections(raw, validIDs: [valid])
     #expect(corrections == [valid: "大眼橙"])
 }
 
 @Test func indexedCorrectionParserMapsShortIDsAndDropsUnchangedText() throws {
     let words = [word("大", 0, 0.1), word("眼", 0.1, 0.2), word("尘", 0.2, 0.3)]
     let raw = #"{"corrections":[{"id":"0","text":" "},{"id":"1","text":"眼"},{"id":"2","text":"橙"},{"id":"99","text":"错"}]}"#
-    let result = try MiMoClient.parseIndexedCorrections(raw, words: words)
+    let result = try AIClient.parseIndexedCorrections(raw, words: words)
     #expect(result == [words[2].id: "橙"])
 }
 
@@ -210,7 +212,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     let first = [word("大", 0, 0.1), word("眼", 0.1, 0.2), word("尘", 0.2, 0.3)]
     let second = [word("不", 0.3, 0.4), word("改", 0.4, 0.5)]
     let raw = #"{"lines":[{"id":0,"text":"大眼橙"}]}"#
-    let result = try MiMoClient.parseLineCorrections(raw, lines: [first, second])
+    let result = try AIClient.parseLineCorrections(raw, lines: [first, second])
     #expect(result == [first[2].id: "橙"])
     #expect(result.keys.allSatisfy { first.map(\.id).contains($0) })
 }
@@ -218,11 +220,11 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 @Test func lineCorrectionParserRejectsDeletedTextInsteadOfCollapsingUUIDs() throws {
     let line = [word("保", 0, 0.1), word("留", 0.1, 0.2), word("我", 0.2, 0.3)]
     let raw = #"{"lines":[{"id":0,"text":"保留"}]}"#
-    #expect(try MiMoClient.parseLineCorrections(raw, lines: [line]).isEmpty)
+    #expect(try AIClient.parseLineCorrections(raw, lines: [line]).isEmpty)
 }
 
 @Test func estimatesWordsInsideAudioChunk() {
-    let words = MiMoASRClient.estimatedWords(text: "你好，世界。", start: 60, duration: 10)
+    let words = AIASRClient.estimatedWords(text: "你好，世界。", start: 60, duration: 10)
     #expect(words.map(\.text).joined() == "你好，世界。")
     #expect(words.map(\.text) == ["你", "好", "，", "世", "界", "。"])
     #expect(words.contains { $0.text.contains("，") })
@@ -231,9 +233,9 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func overlappingASRChunksMergeRepeatedBoundaryText() {
-    let first = MiMoASRClient.estimatedWords(text: "不知道大家有没有这样的感觉，当你开始租房", start: 0, duration: 8)
-    let second = MiMoASRClient.estimatedWords(text: "当你开始租房之后，就会发现以前很多东西", start: 6, duration: 8)
-    let merged = MiMoASRClient.mergeOverlappingChunks([first, second])
+    let first = AIASRClient.estimatedWords(text: "不知道大家有没有这样的感觉，当你开始租房", start: 0, duration: 8)
+    let second = AIASRClient.estimatedWords(text: "当你开始租房之后，就会发现以前很多东西", start: 6, duration: 8)
+    let merged = AIASRClient.mergeOverlappingChunks([first, second])
     #expect(merged.map(\.text).joined() == "不知道大家有没有这样的感觉，当你开始租房之后，就会发现以前很多东西")
     #expect(merged.filter { $0.text == "当" }.count == 1)
 }
@@ -513,7 +515,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(refined.isEmpty)
 }
 
-@Test func mimoSegmentationOnlyChangesLinesAndMapsThemBackToUUIDs() {
+@Test func aiSegmentationOnlyChangesLinesAndMapsThemBackToUUIDs() {
     let words = Array("所以，投影仪更有价值。").enumerated().map { index, value in word(String(value), Double(index), Double(index + 1)) }
     let result = TimelineEngine.applySegmentedArticle("所以，投影仪更有价值。\n", to: words)
     #expect(result != nil)
@@ -528,13 +530,123 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func parsesSegmentationBreakIndexesWithoutAcceptingChangedText() throws {
-    #expect(try MiMoClient.parseSegmentationBreakIndexes(#"{"break_before":[5,2,5]}"#, wordCount: 8) == [2, 5])
+    #expect(try AIClient.parseSegmentationBreakIndexes(#"{"break_before":[5,2,5]}"#, wordCount: 8) == [2, 5])
     #expect(throws: (any Error).self) {
-        try MiMoClient.parseSegmentationBreakIndexes(#"{"article":"被改写的原文"}"#, wordCount: 8)
+        try AIClient.parseSegmentationBreakIndexes(#"{"article":"被改写的原文"}"#, wordCount: 8)
     }
     #expect(throws: (any Error).self) {
-        try MiMoClient.parseSegmentationBreakIndexes(#"{"break_before":[0,8]}"#, wordCount: 8)
+        try AIClient.parseSegmentationBreakIndexes(#"{"break_before":[0,8]}"#, wordCount: 8)
     }
+}
+
+@Test func returnedArticleMapsEveryBreakBackToTheExactWord() {
+    func characters(_ text: String) -> [TranscriptWord] {
+        Array(text).enumerated().map { index, value in word(String(value), Double(index) * 0.2, Double(index + 1) * 0.2) }
+    }
+    let text = "没错啊镜头前面这个拿着相机走着红毯的人就是我事情还要从两天前开始说起那时我刚落地中山就被告知要在48小时内完成一部创业短片"
+    let words = characters(text)
+    let lines = [
+        "没错啊镜头前面这个拿着相机走着红毯的人就是我",
+        "事情还要从两天前开始说起",
+        "那时我刚落地中山",
+        "就被告知要在48小时内完成一部创业短片"
+    ]
+    #expect(lines.joined() == text)
+    var expected: Set<UUID> = [], cursor = 0
+    for line in lines.dropLast() { cursor += line.count; expected.insert(words[cursor].id) }
+
+    let clean = TimelineEngine.applySegmentedArticle(lines.joined(separator: "\n"), to: words)
+    #expect(clean?.breaks == expected)
+    #expect(clean?.words.map(\.id) == words.map(\.id))
+    #expect(clean?.words.map(\.text) == words.map(\.text))
+
+    // 顺手补了一个标点、又改了一个同音错字，仍然能逐字映射回原来的 UUID。
+    let edited = TimelineEngine.applySegmentedArticle(
+        "没错啊，镜头前面这个拿着相机走着洪毯的人就是我\n事情还要从两天前开始说起\n那时我刚落地中山\n就被告知要在48小时内完成一部创业短片",
+        to: words
+    )
+    #expect(edited?.breaks == expected)
+    #expect(edited?.words.map(\.text) == words.map(\.text))
+}
+
+@Test func returnedArticleIsRejectedWhenTheModelRewroteTheText() {
+    func characters(_ text: String) -> [TranscriptWord] {
+        Array(text).enumerated().map { index, value in word(String(value), Double(index) * 0.2, Double(index + 1) * 0.2) }
+    }
+    let words = characters("没错啊镜头前面这个拿着相机走着红毯的人就是我")   // 22 字，最多容忍 2 处改动
+    #expect(TimelineEngine.applySegmentedArticle("没错啊镜头前面这个人就是我\n后面的内容都省略了", to: words) == nil)
+    #expect(TimelineEngine.applySegmentedArticle("这是一句完全不相干的话", to: words) == nil)
+    #expect(TimelineEngine.applySegmentedArticle("没错啊镜头前面这个拿着相机走着洪毯的\n人就是我", to: words) != nil)
+}
+
+@Test func segmentationInputSendsCleanArticleWithoutIndexMarkers() {
+    let input = AIClient.segmentationInput(article: "这也是，为什么我觉得投影仪更适合租房。", reference: "")
+    #expect(input.contains("<article>这也是，为什么我觉得投影仪更适合租房。</article>"))
+    #expect(!input.contains("[0]"))
+    #expect(!input.contains("<reference>"))
+    let withReference = AIClient.segmentationInput(article: "正文", reference: "参考稿")
+    #expect(withReference.contains("<article>正文</article>\n<reference>参考稿</reference>"))
+}
+
+@Test func segmentationWindowsSplitLongTranscriptAtChapterPauses() {
+    func chapters(_ lengths: [Int], gap: Double) -> [TranscriptWord] {
+        var words: [TranscriptWord] = [], cursor = 0.0
+        for (index, length) in lengths.enumerated() {
+            if index > 0, gap > 0 { cursor += gap }
+            for _ in 0..<length { words.append(word("字", cursor, cursor + 0.2)); cursor += 0.2 }
+        }
+        return words
+    }
+    // 三章各 500 字，章节之间停 1.2 秒；预算 1200 字 → 应该在前两章之后断开。
+    let long = chapters([500, 500, 500], gap: 1.2)
+    let windows = TimelineEngine.segmentationWindows(in: long)
+    #expect(windows == [0..<1000, 1000..<1500])
+    #expect(AIClient.contextText(long, endingBefore: windows[1].lowerBound) == String(repeating: "字", count: 120))
+    #expect(AIClient.contextText(long, startingAt: windows[0].upperBound) == String(repeating: "字", count: 120))
+
+    // 总长没超预算时只发一次。
+    #expect(TimelineEngine.segmentationWindows(in: chapters([300, 300, 300], gap: 1.2)) == [0..<900])
+    // 没有长停顿时整篇算一章。
+    #expect(TimelineEngine.segmentationWindows(in: chapters([300, 300], gap: 0)) == [0..<600])
+    // 单章过长时在内部顺着停顿切开。
+    var overlong: [TranscriptWord] = [], overlongCursor = 0.0
+    for index in 0..<1500 {
+        if index > 0, index % 100 == 0 { overlongCursor += 0.6 }
+        overlong.append(word("字", overlongCursor, overlongCursor + 0.2))
+        overlongCursor += 0.2
+    }
+    #expect(TimelineEngine.segmentationWindows(in: overlong) == [0..<1100, 1100..<1500])
+}
+
+@Test func segmentationWindowsAlwaysCoverEveryWordExactlyOnce() {
+    var words: [TranscriptWord] = [], cursor = 0.0
+    for index in 0..<1500 {
+        if index > 0, index % 97 == 0 { cursor += Double(index % 3) * 0.5 + 1.1 } else { cursor += 0.05 }
+        words.append(word("字", cursor, cursor + 0.1))
+        cursor += 0.1
+    }
+    let windows = TimelineEngine.segmentationWindows(in: words)
+    #expect(windows.count > 1)
+    #expect(windows.first?.lowerBound == 0)
+    #expect(windows.last?.upperBound == words.count)
+    for (previous, next) in zip(windows, windows.dropFirst()) { #expect(previous.upperBound == next.lowerBound) }
+    #expect(windows.allSatisfy { !$0.isEmpty })
+}
+
+@Test func segmentationInputKeepsWindowContextOutsideTheArticle() {
+    let input = AIClient.segmentationInput(article: "第二段正文", reference: "", contextBefore: "上一段结尾", contextAfter: "下一段开头")
+    #expect(input.contains("<before>上一段结尾</before>"))
+    #expect(input.contains("<article>第二段正文</article>"))
+    #expect(input.contains("<after>下一段开头</after>"))
+    #expect(input.contains("不要给它们换行"))
+    #expect(!AIClient.segmentationInput(article: "正文", reference: "").contains("<before>"))
+}
+
+@Test func parseSegmentedArticleAcceptsFencesAndRepairsRawNewlines() throws {
+    #expect(try AIClient.parseSegmentedArticle(#"{"article":"第一句\n第二句"}"#) == "第一句\n第二句")
+    #expect(try AIClient.parseSegmentedArticle("```json\n{\"article\":\"第一句\n第二句\"}\n```") == "第一句\n第二句")
+    #expect(throws: (any Error).self) { try AIClient.parseSegmentedArticle(#"{"break_before":[12]}"#) }
+    #expect(throws: (any Error).self) { try AIClient.parseSegmentedArticle(#"{"article":""}"#) }
 }
 
 @Test func subtitleCuesNeverEmitBlankPunctuationRows() {
@@ -602,6 +714,114 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(suggestions.first?.retainedWordIDs == completed.wordIDs)
 }
 
+@Test func repetitionScanCatchesHalfSaidLineExtendedByFullLine() {
+    let half = SubtitleCue(text: "我们的计划第一天", start: 73.0, end: 74.1, wordIDs: [UUID()])
+    let full = SubtitleCue(text: "我们的计划是第一天去堪景", start: 75.7, end: 77.4, wordIDs: [UUID()])
+    let suggestions = TimelineEngine.repetitionSuggestions(cues: [half, full])
+    #expect(suggestions.count == 1)
+    #expect(suggestions.first?.wordIDs == half.wordIDs)
+    #expect(suggestions.first?.retainedWordIDs == full.wordIDs)
+}
+
+@Test func repetitionScanCatchesShortTakeExtendedByLaterTake() {
+    let short = SubtitleCue(text: "能够有摄影包防护作用的", start: 116.6, end: 118.1, wordIDs: [UUID()])
+    let extended = SubtitleCue(text: "能够有摄影包的防护作用的休闲包就是最好的选择了", start: 118.4, end: 121.6, wordIDs: [UUID()])
+    let suggestions = TimelineEngine.repetitionSuggestions(cues: [short, extended])
+    #expect(suggestions.count == 1)
+    #expect(suggestions.first?.wordIDs == short.wordIDs)
+    #expect(suggestions.first?.retainedWordIDs == extended.wordIDs)
+}
+
+@Test func repetitionScanCatchesReorderedRetake() {
+    let first = SubtitleCue(text: "在中山进入正式拍摄之后呢", start: 233.8, end: 235.4, wordIDs: [UUID()])
+    let second = SubtitleCue(text: "在中山正式进入拍摄之后呢", start: 248.5, end: 250.1, wordIDs: [UUID()])
+    let suggestions = TimelineEngine.repetitionSuggestions(cues: [first, second])
+    #expect(suggestions.count == 1)
+    #expect(suggestions.first?.wordIDs == first.wordIDs)
+    #expect(suggestions.first?.retainedWordIDs == second.wordIDs)
+}
+
+@Test func repetitionScanCollapsesRepeatedRetakesToTheLastTake() {
+    let first = SubtitleCue(text: "我们的计划第一天", start: 71.6, end: 72.6, wordIDs: [UUID()])
+    let second = SubtitleCue(text: "我们的计划第一天", start: 73.0, end: 74.1, wordIDs: [UUID()])
+    let third = SubtitleCue(text: "我们的计划是第一天去堪景", start: 75.7, end: 77.4, wordIDs: [UUID()])
+    let suggestions = TimelineEngine.repetitionSuggestions(cues: [first, second, third])
+    #expect(suggestions.count == 2)
+    #expect(suggestions.map(\.wordIDs) == [first.wordIDs, second.wordIDs])
+    #expect(suggestions.allSatisfy { $0.retainedWordIDs == third.wordIDs })
+}
+
+@Test func repetitionScanKeepsDifferentSentencesThatShareATemplate() {
+    let first = SubtitleCue(text: "第一天的行程安排得很满", start: 10, end: 12, wordIDs: [UUID()])
+    let second = SubtitleCue(text: "第二天的行程安排比较轻松", start: 14, end: 16, wordIDs: [UUID()])
+    #expect(TimelineEngine.repetitionSuggestions(cues: [first, second]).isEmpty)
+}
+
+// 鱼骨图：分支只有一句/半句 → 读错，可以直接剪掉、保留最后一遍。
+@Test func repetitionScanMarksShortBranchAsMisread() {
+    let half = SubtitleCue(text: "我们的计划第一天", start: 73.0, end: 74.1, wordIDs: [UUID()])
+    let full = SubtitleCue(text: "我们的计划是第一天去堪景", start: 75.7, end: 77.4, wordIDs: [UUID()])
+    let suggestions = TimelineEngine.repetitionSuggestions(cues: [half, full])
+    #expect(suggestions.count == 1)
+    #expect(suggestions.first?.repetitionKind == .misread)
+}
+
+// 鱼骨图：分支是成段的好几句话 → 可能换了语气，标成必须由人来选的备选。
+@Test func repetitionScanMarksParagraphBranchAsToneChoice() {
+    let early = [
+        SubtitleCue(text: "今天我们先去孙文西路堪景然后回酒店", start: 20, end: 24, wordIDs: [UUID()]),
+        SubtitleCue(text: "第二天一早出发去岐江公园拍日出", start: 24.9, end: 28.9, wordIDs: [UUID()]),
+        SubtitleCue(text: "晚上整理素材准备第二天的拍摄", start: 29.8, end: 33.8, wordIDs: [UUID()])
+    ]
+    let later = [
+        SubtitleCue(text: "今天我们先去孙文西路堪景然后再回酒店", start: 60, end: 64, wordIDs: [UUID()]),
+        SubtitleCue(text: "第二天一早出发去岐江公园拍摄日出", start: 64.9, end: 68.9, wordIDs: [UUID()]),
+        SubtitleCue(text: "晚上整理素材准备第二天的拍摄计划", start: 69.8, end: 73.8, wordIDs: [UUID()])
+    ]
+    let suggestions = TimelineEngine.repetitionSuggestions(cues: early + later)
+    #expect(suggestions.count == 1)
+    #expect(suggestions.first?.repetitionKind == .alternateTake)
+    #expect(suggestions.first?.wordIDs == early.flatMap(\.wordIDs))
+    #expect(suggestions.first?.retainedWordIDs == later.flatMap(\.wordIDs))
+}
+
+// 自动去重只剪读错的那部分；成段重录要留下来让用户选语气。
+@Test @MainActor func automaticDedupeCutsMisreadsAndKeepsToneChoices() {
+    let misreadOne = word("我们的计划第一天", 10, 11)
+    let misreadTwo = word("我们的计划是第一天去堪景", 12, 13.5)
+    let toneEarly = [word("今天我们先去孙文西路堪景然后回酒店", 20, 24), word("第二天一早出发去岐江公园拍日出", 24.9, 28.9), word("晚上整理素材准备第二天的拍摄", 29.8, 33.8)]
+    let toneLater = [word("今天我们先去孙文西路堪景然后再回酒店", 60, 64), word("第二天一早出发去岐江公园拍摄日出", 64.9, 68.9), word("晚上整理素材准备第二天的拍摄计划", 69.8, 73.8)]
+    let model = EditorModel()
+    model.words = [misreadOne, misreadTwo] + toneEarly + toneLater
+    model.dedupeMode = .automatic
+    model.executeDedupe()
+
+    #expect(model.words.filter { $0.id == misreadOne.id }.allSatisfy { $0.isDeleted })
+    #expect(model.words.filter { toneEarly.map(\.id).contains($0.id) }.allSatisfy { !$0.isDeleted })
+    let pending = model.suggestions.filter { $0.state == .pending }
+    #expect(pending.count == 1)
+    #expect(pending.first?.repetitionKind == .alternateTake)
+    #expect(Set(pending.first?.wordIDs ?? []) == Set(toneEarly.map(\.id)))
+
+    // 选“较早那一版”→ 只剪掉后面重录的那一遍。
+    model.chooseAlternateTake(pending[0].id, keepEarlier: true)
+    #expect(model.words.filter { toneLater.map(\.id).contains($0.id) }.allSatisfy { $0.isDeleted })
+    #expect(model.words.filter { toneEarly.map(\.id).contains($0.id) }.allSatisfy { !$0.isDeleted })
+    #expect(!model.suggestions.contains { $0.state == .pending })
+}
+
+// 批量“全部删除”不能顺手删掉需要选语气的整段重录。
+@Test @MainActor func batchDeleteLeavesToneChoicesPending() {
+    let early = word("今天我们先去孙文西路堪景然后回酒店", 20, 24)
+    let later = word("今天我们先去孙文西路堪景然后再回酒店", 60, 64)
+    let model = EditorModel()
+    model.words = [early, later]
+    model.suggestions = [EditSuggestion(type: .repetition, title: "成段重录（两个语气选一个）", reason: "试听两版再选", confidence: 0.8, wordIDs: [early.id], retainedWordIDs: [later.id], start: 20, end: 24, repetitionKind: .alternateTake)]
+    model.decideAll(delete: true)
+    #expect(!model.words[0].isDeleted)
+    #expect(model.suggestions.first?.state == .pending)
+}
+
 @MainActor @Test func timelineSelectionDeleteCanUndo() {
     let first = word("第一句。", 0, 1)
     let second = word("第二句。", 1, 2)
@@ -615,7 +835,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 }
 
 @Test func deepSeekSettingsDisableThinkingForStructuredTextTasks() {
-    let settings = MiMoSettings(baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash", asrModel: "", asrPath: "", apiKey: "secret", provider: "deepseek")
+    let settings = AISettings(baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash", apiKey: "secret")
     let body = settings.requestBody(["model": settings.model])
     #expect((body["thinking"] as? [String: String])?["type"] == "disabled")
     #expect(settings.serviceName == "DeepSeek")
@@ -627,13 +847,14 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     {"break_before":[18,7,18]}
     ```
     """
-    #expect(try MiMoClient.parseSegmentationBreakIndexes(raw, wordCount: 30) == [7, 18])
+    #expect(try AIClient.parseSegmentationBreakIndexes(raw, wordCount: 30) == [7, 18])
 }
 
 @MainActor @Test func deletingSubtitleDoesNotCutMediaAndCanUndo() {
     let first = word("第一句", 0, 1)
     let second = word("第二句", 1, 2)
     let model = EditorModel()
+    model.edgeTrim = .keep  // 这条只验证“删字幕不动媒体”，先关掉片头片尾留白裁剪。
     model.words = [first, second]
     model.deleteSubtitles([first.id])
     #expect(model.words.map(\.id) == [second.id])
@@ -862,7 +1083,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(!model.burnSubtitles)
 }
 
-@Test func convertsExternalVideoToMiMoSizedWAVChunks() async throws {
+@Test func convertsExternalVideoToASRSizedWAVChunks() async throws {
     guard let path = ProcessInfo.processInfo.environment["CODECUT_TEST_VIDEO"] else { return }
     let chunks = try await AudioChunker.makeWAVChunks(videoURL: URL(fileURLWithPath: path))
     defer { chunks.forEach { try? FileManager.default.removeItem(at: $0.url) } }
@@ -901,7 +1122,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(ranges.count == 2)
     #expect(ranges[0].end < 1.7)
     #expect(ranges[1].start > 2.8)
-    let words = MiMoASRClient.estimatedWords(text: "第一，第二，第三，第四。", start: 10, duration: 6, speechRanges: ranges)
+    let words = AIASRClient.estimatedWords(text: "第一，第二，第三，第四。", start: 10, duration: 6, speechRanges: ranges)
     #expect(words.count >= 2)
     #expect(words.first!.start > 10.4 && words.first!.start < 10.6)
     #expect(words.last!.end > 14.9 && words.last!.end < 15.1)
@@ -911,7 +1132,7 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
 
 @Test func asrRetriesTransientFailuresButNotInvalidResponses() async throws {
     var attempts = 0
-    let result: String = try await MiMoASRClient.retrying(initialDelayNanoseconds: 0) {
+    let result: String = try await AIASRClient.retrying(initialDelayNanoseconds: 0) {
         attempts += 1
         if attempts < 3 { throw URLError(.networkConnectionLost) }
         return "成功"
@@ -920,9 +1141,9 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     #expect(attempts == 3)
     var invalidAttempts = 0
     do {
-        let _: String = try await MiMoASRClient.retrying(initialDelayNanoseconds: 0) {
+        let _: String = try await AIASRClient.retrying(initialDelayNanoseconds: 0) {
             invalidAttempts += 1
-            throw MiMoError.invalidResponse("坏数据")
+            throw AIError.invalidResponse("坏数据")
         }
         Issue.record("无效响应不应成功")
     } catch { #expect(invalidAttempts == 1) }
@@ -965,12 +1186,12 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
     try Data([1]).write(to: video)
-    let settings = MiMoSettings(baseURL: "https://example.com/v1", model: "chat", asrModel: "asr", asrPath: "/audio/transcriptions", apiKey: "secret")
-    let first = try TranscriptCache.url(videoURL: video, settings: settings, folder: folder)
+    let identity = "deepseek|chat"
+    let first = try TranscriptCache.url(videoURL: video, identity: identity, folder: folder)
     try Data([1, 2]).write(to: video)
-    let second = try TranscriptCache.url(videoURL: video, settings: settings, folder: folder)
+    let second = try TranscriptCache.url(videoURL: video, identity: identity, folder: folder)
     #expect(first != second)
-    #expect(!first.lastPathComponent.contains("secret"))
+    #expect(!first.lastPathComponent.contains("deepseek"))
 }
 
 @MainActor @Test func openingMissingSourceNeverKeepsPreviousVideo() async throws {
@@ -1029,4 +1250,179 @@ private func word(_ text: String, _ start: Double, _ end: Double, deleted: Bool 
     model.decide(second.id, delete: true)
     #expect(model.words[1].isDeleted)
     #expect(model.taskState == .done("全部重复字幕已处理完成"))
+}
+
+@Test func pausePlanOffStillDeletesTheWholeBreath() {
+    let left = word("这是第一句", 0, 1)
+    let right = word("这是第二句", 1.6, 2.6)
+    let breath = BreathCandidate(start: 1.0, end: 1.6, leftText: "这是第一句", rightText: "这是第二句", state: .deleted)
+    let ranges = TimelineEngine.deletedRanges(words: [left, right], breaths: [breath], pause: .off)
+    #expect(ranges == [TimeRange(start: 1.0, end: 1.6)])
+}
+
+@Test func pausePlanKeepsSilenceAtTheEndOfASentence() {
+    let left = word("这是第一句", 0, 1)
+    let right = word("这是第二句", 1.6, 2.6)
+    let breath = BreathCandidate(start: 1.0, end: 1.6, leftText: "这是第一句", rightText: "这是第二句", state: .deleted)
+    let ranges = TimelineEngine.deletedRanges(words: [left, right], breaths: [breath], pause: .standard)
+    // 0.6 秒的气口剪掉 0.3 秒，末尾 0.3 秒留成句子之间的呼吸。
+    #expect(ranges.count == 1)
+    #expect(abs(ranges[0].start - 1.0) < 0.0001)
+    #expect(abs(ranges[0].end - 1.3) < 0.0001)
+    let kept = TimelineEngine.complement(of: ranges, duration: 2.6)
+    #expect(abs(kept.reduce(0) { $0 + $1.duration } - 2.3) < 0.0001)
+}
+
+@Test func pausePlanKeepsMoreSilenceAtChapterBreaks() {
+    let left = word("上一章讲完了", 0, 1)
+    let right = word("下一章开始", 3.2, 4.2)
+    let breath = BreathCandidate(start: 1.0, end: 3.2, leftText: "上一章讲完了", rightText: "下一章开始", state: .deleted)
+    for plan in [PausePlan.tight, .standard, .relaxed] {
+        let ranges = TimelineEngine.deletedRanges(words: [left, right], breaths: [breath], pause: plan)
+        #expect(abs(ranges[0].end - (3.2 - plan.chapterKeep)) < 0.0001)
+    }
+}
+
+@Test func pausePlanUsesChapterRuleForASentenceEndingInPunctuation() {
+    // 句末标点把 0.5 秒的短停顿升级成章节停顿，于是这 0.5 秒完整保留；
+    // 同样时长的句中停顿只留 0.3 秒。
+    let chapterBreath = BreathCandidate(start: 1.0, end: 1.5, leftText: "第一章结束了。", rightText: "第二章开始", state: .deleted)
+    #expect(TimelineEngine.isParagraphBreak(chapterBreath))
+    let chapterLeft = word("第一章结束了。", 0, 1)
+    let chapterRight = word("第二章开始", 1.5, 2.5)
+    #expect(TimelineEngine.deletedRanges(words: [chapterLeft, chapterRight], breaths: [chapterBreath], pause: .standard).isEmpty)
+
+    let midBreath = BreathCandidate(start: 1.0, end: 1.5, leftText: "那个", rightText: "第二章开始", state: .deleted)
+    #expect(!TimelineEngine.isParagraphBreak(midBreath))
+    let ranges = TimelineEngine.deletedRanges(words: [word("那个", 0, 1), chapterRight], breaths: [midBreath], pause: .standard)
+    #expect(ranges.count == 1)
+    #expect(abs(ranges[0].end - 1.2) < 0.0001)
+}
+
+@Test func deletedWordBeforeThePauseStillKeepsTheRetainedSilence() {
+    // 先删掉一个口癖，紧跟着是一段气口：合并出来的删除区间末尾仍然要留出停顿。
+    let left = word("今天天气不错", 0, 1)
+    let filler = word("嗯", 1.0, 1.4, deleted: true)
+    let breath = BreathCandidate(start: 1.4, end: 2.0, leftText: "嗯", rightText: "我们出发", state: .deleted)
+    let right = word("我们出发", 2.0, 3.0)
+    let ranges = TimelineEngine.deletedRanges(words: [left, filler, breath as BreathCandidate].isEmpty ? [] : [left, filler, right], breaths: [breath], pause: .standard)
+    #expect(ranges.count == 1)
+    // 删除区间从口癖开始（1.0 - 0.05 padding），到气口末尾留下 0.3 秒为止。
+    #expect(abs(ranges[0].start - 0.95) < 0.0001)
+    #expect(abs(ranges[0].end - 1.7) < 0.0001)
+    let kept = TimelineEngine.complement(of: ranges, duration: 3.0)
+    #expect(abs(kept.reduce(0) { $0 + $1.duration } - 2.25) < 0.0001)
+}
+
+@MainActor @Test func pausePlanIsStoredInTheProjectDocument() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "codecut-pause-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let project = folder.appending(path: "停顿.codecut")
+    let model = EditorModel()
+    model.projectName = "停顿"
+    model.pausePlan = .relaxed
+    try model.save(to: project)
+
+    let restored = EditorModel()
+    try await restored.openProject(project)
+    #expect(restored.pausePlan == .relaxed)
+
+    // 老项目文件没有这个字段时按“标准”打开。
+    var document = try ProjectStore.load(from: project)
+    document.pausePlan = nil
+    try ProjectStore.save(document, to: project)
+    let legacy = EditorModel()
+    try await legacy.openProject(project)
+    #expect(legacy.pausePlan == .standard)
+}
+
+@MainActor @Test func deletingABreathKeepsBreathingRoomByDefault() {
+    let model = EditorModel()
+    model.duration = 4
+    model.trimEnd = 4
+    let breath = BreathCandidate(start: 1, end: 2, leftText: "上一段说完", rightText: "新的一段")
+    model.breaths = [breath]
+    model.decideBreath(breath.id, delete: true)
+    // 1 秒的长停顿是章节边界：只剪掉 0.2 秒，保留 0.8 秒，成片从 4 秒变成 3.8 秒。
+    #expect(abs(model.outputDuration - 3.8) < 0.001)
+    #expect(model.keptRanges.contains { abs($0.start - 1.2) < 0.001 && abs($0.end - 4) < 0.001 })
+    model.undo()
+    #expect(model.outputDuration == 4)
+}
+
+@MainActor @Test func headDeadAirIsTrimmedAndKeepsAShortLeadIn() {
+    let model = EditorModel()
+    model.duration = 30
+    model.trimEnd = 30
+    model.words = [word("开", 11.28, 11.5), word("场", 11.5, 11.8), word("白", 20, 20.5)]
+
+    // 默认就是剪掉：0 → 11.28 秒的无声画面按“标准”档留 0.3 秒前导。
+    #expect(model.edgeTrim == .trim)
+    #expect(model.deletedRanges.contains { abs($0.start) < 0.001 && abs($0.end - 10.98) < 0.001 })
+    #expect(model.keptRanges.first.map { abs($0.start - 10.98) < 0.001 } == true)
+
+    // 片尾同样处理：最后一个字 20.5 秒之后再留 0.3 秒。
+    #expect(model.deletedRanges.contains { abs($0.start - 20.8) < 0.001 && abs($0.end - 30) < 0.001 })
+
+    model.pausePlan = .relaxed
+    #expect(model.deletedRanges.contains { abs($0.end - 10.78) < 0.001 })
+    model.pausePlan = .off
+    #expect(model.deletedRanges.contains { abs($0.end - 11.28) < 0.001 })
+}
+
+@MainActor @Test func edgeTrimKeepsShortHeadsAndNeverDeletesTheWholeClip() {
+    let model = EditorModel()
+    model.duration = 20
+    model.trimEnd = 20
+    model.words = [word("就", 0.2, 0.5), word("说", 0.5, 0.9)]
+    // 片头只有 0.2 秒，比留白还短，不应该多出一段删除区间。
+    #expect(model.deletedRanges.allSatisfy { $0.start > 0.001 })
+    // 但片尾 0.9 秒之后没有台词，按 0.3 秒留白剪掉，成片只剩 0 → 1.2 秒。
+    #expect(model.keptRanges.count == 1)
+    #expect(abs(model.outputDuration - 1.2) < 0.001)
+
+    // 没有逐字稿（或整段都被删掉）时不能把整条片子剪没。
+    let empty = EditorModel()
+    empty.duration = 12
+    empty.trimEnd = 12
+    #expect(empty.deletedRanges.isEmpty)
+    #expect(empty.outputDuration == 12)
+
+    let allDeleted = EditorModel()
+    allDeleted.duration = 12
+    allDeleted.trimEnd = 12
+    allDeleted.words = [word("废", 5, 6, deleted: true)]
+    #expect(!allDeleted.keptRanges.isEmpty)
+}
+
+@MainActor @Test func edgeTrimKeepsTheHeadWhenTurnedOff() {
+    let model = EditorModel()
+    model.duration = 30
+    model.trimEnd = 30
+    model.words = [word("开", 11.28, 11.5)]
+    model.edgeTrim = .keep
+    #expect(!model.deletedRanges.contains { $0.start < 0.001 })
+    #expect(model.outputDuration == 30)
+}
+
+@MainActor @Test func edgeTrimIsStoredInTheProjectDocument() async throws {
+    let project = FileManager.default.temporaryDirectory.appending(path: "边缘-\(UUID()).codecut")
+    defer { try? FileManager.default.removeItem(at: project) }
+    let model = EditorModel()
+    model.projectName = "边缘"
+    model.edgeTrim = .keep
+    try model.save(to: project)
+
+    let restored = EditorModel()
+    try await restored.openProject(project)
+    #expect(restored.edgeTrim == .keep)
+
+    // 老项目文件没有这个字段时默认剪掉片头片尾。
+    var document = try ProjectStore.load(from: project)
+    document.edgeTrim = nil
+    try ProjectStore.save(document, to: project)
+    let legacy = EditorModel()
+    try await legacy.openProject(project)
+    #expect(legacy.edgeTrim == .trim)
 }

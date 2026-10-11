@@ -2,33 +2,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(EditorModel.self) private var model
     var onClose: (() -> Void)?
-    @AppStorage("ai.provider") private var provider = "mimo"
-    @AppStorage("mimo.baseURL") private var baseURL = "https://api.xiaomimimo.com/v1"
-    @AppStorage("mimo.model") private var model = "mimo-v2.5-pro"
-    @AppStorage("mimo.asrModel") private var asrModel = "mimo-v2.5-asr"
-    @AppStorage("mimo.asrPath") private var asrPath = "/chat/completions"
-    @State private var apiKey = ""
-    @AppStorage("deepseek.baseURL") private var deepSeekBaseURL = "https://api.deepseek.com"
-    @AppStorage("deepseek.model") private var deepSeekModel = "deepseek-v4-flash"
-    @State private var deepSeekAPIKey = ""
-    @State private var saved = false
     @State private var testing = false
     @State private var testResult = ""
 
-    private func saveAPIKey() {
-        do {
-            try KeychainStore.save(provider == "deepseek" ? deepSeekAPIKey : apiKey, key: provider == "deepseek" ? "deepseek.apiKey" : "mimo.apiKey")
-            saved = true
-            testResult = ""
-        } catch {
-            saved = false
-            testResult = "\(error.localizedDescription)；Key 仅在本次运行中可用。请从 Xcode 使用稳定签名运行 App。"
-        }
-    }
-
     private func close() {
-        saveAPIKey()
         if let onClose {
             onClose()
         } else {
@@ -40,52 +19,55 @@ struct SettingsView: View {
         Form {
             Section {
                 HStack {
-                    VStack(alignment: .leading, spacing: 3) { Text("AI API 设置").font(.title2.weight(.semibold)); Text("用于断句、审阅和剪辑分析；语音识别仍由本机 WhisperKit 完成").foregroundStyle(.secondary) }
-                    Spacer(); Button(action: close) { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary) }.buttonStyle(.plain)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("AI 设置").font(.title2.weight(.semibold))
+                        Text("断句、审阅、去重分析和分镜提示词都由本机模型完成；语音识别仍由本机 WhisperKit 完成")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(action: close) { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary) }.buttonStyle(.plain)
                 }
             }
-            Section("AI 提供商") {
-                Picker("使用模型", selection: $provider) {
-                    Text("MiMo V2.5").tag("mimo")
-                    Text("DeepSeek V4 Flash").tag("deepseek")
-                }.pickerStyle(.segmented)
-                Text(provider == "deepseek" ? "启用后所有文本任务只调用 DeepSeek，不再调用 MiMo。" : "当前所有文本任务使用 MiMo。")
+            Section("模型服务") {
+                LabeledContent("当前服务", value: AISettings.current.serviceName)
+                LabeledContent("运行方式", value: "llama.cpp · 只在本机运行（\(AISettings.localEndpoint)）")
+                Text("云端 DeepSeek 接口已关闭：不需要 API Key，文字稿和素材都不会离开这台电脑。")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("连接") {
-                SecureField("API Key", text: provider == "deepseek" ? $deepSeekAPIKey : $apiKey)
-                TextField("Base URL", text: provider == "deepseek" ? $deepSeekBaseURL : $baseURL)
-            }
-            Section("模型") {
-                TextField("文本模型", text: provider == "deepseek" ? $deepSeekModel : $model)
-                if provider == "mimo" {
-                    TextField("语音识别模型（保留兼容）", text: $asrModel)
-                    TextField("ASR 接口路径（保留兼容）", text: $asrPath)
+            Section("本机模型") {
+                LabeledContent("状态", value: model.localModelState.label)
+                if !model.localModelNotice.isEmpty {
+                    Text(model.localModelNotice).font(.caption).foregroundStyle(.secondary)
                 }
-            }
-            Section {
                 HStack {
-                    Text("密钥保存在 macOS 钥匙串，不写入项目文件。")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Button(model.isPreparingLocalModel ? "准备中…" : "准备本地模型") { Task { await model.prepareLocalModel() } }
+                        .disabled(model.isPreparingLocalModel)
+                    Button("检查状态") { Task { await model.refreshLocalModel() } }
                     Spacer()
-                    if saved { Label("已存钥匙串", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
-                    Button(testing ? "测试中…" : "测试连接") { saveAPIKey(); testing = true; Task { do { try await MiMoClient(settings: .current).ping(); testResult = saved ? "连接成功" : "连接成功，但 Key 仅在本次运行中可用" } catch { testResult = error.localizedDescription }; testing = false } }.disabled(testing)
-                    Button("保存") { saveAPIKey() }
-                        .buttonStyle(.borderedProminent)
-                    Button("完成", action: close)
-                        .keyboardShortcut(.defaultAction)
+                    Button(testing ? "测试中…" : "测试连接") {
+                        testing = true
+                        Task {
+                            do {
+                                try await AISettings.current.prepare()
+                                try await AIClient(settings: .current).ping()
+                                testResult = "连接成功"
+                            } catch {
+                                testResult = error.localizedDescription
+                            }
+                            testing = false
+                        }
+                    }.disabled(testing)
+                    Button("完成", action: close).keyboardShortcut(.defaultAction)
                 }
-                if !testResult.isEmpty { Text(testResult).font(.caption).foregroundStyle(testResult.hasPrefix("连接成功") ? .green : .red) }
+                if !testResult.isEmpty {
+                    Text(testResult).font(.caption).foregroundStyle(testResult.hasPrefix("连接成功") ? .green : .red)
+                }
             }
         }
         .formStyle(.grouped)
         .padding()
         .navigationTitle("设置")
         .onExitCommand(perform: close)
-        .task {
-            if asrPath == "/audio/transcriptions" { asrPath = "/chat/completions" }
-            apiKey = KeychainStore.read("mimo.apiKey") ?? ""
-            deepSeekAPIKey = KeychainStore.read("deepseek.apiKey") ?? ""
-        }
+        .task { await model.refreshLocalModel() }
     }
 }
