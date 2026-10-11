@@ -1,88 +1,93 @@
-# CodeCut 自动快编
+# CodeCut 自动剪辑
 
-## macOS / Xcode 版本
+**面向口播、产品视频和素材整理的原生 macOS 本地 AI 剪辑工具。**
 
-在 Xcode 中打开 `CodeCutMac/CodeCut.xcodeproj`，选择 `CodeCut` scheme、运行目标选择 `My Mac` 后运行。不要再用 `Package.swift` 启动应用；它只保留给单元测试。
+CodeCut 把文稿、逐词转写、口播精剪、B-roll 素材识别、分镜编排和音乐参考库放在一个桌面工作流中。通过文字稿定位剪辑，用 AI 辅助审阅和选片，再导出视频或交换格式继续后期制作。
 
-原生版本目前包含：
+> 当前是开发预览版，适用于 Apple Silicon Mac / macOS 15+。AI 默认在本机运行，首次准备模型需要联网。现有下载包未经 Apple 公证，模型和外部运行环境不随软件包分发。
 
-- ChatCut 式 AI、素材/文字稿、播放器、时间线四区布局
-- 本机 WhisperKit 逐词转写和本机 Qwen3-VL 结构化口误建议
-- 逐词删除、AI建议确认、气口逐条确认/自动删除、撤销/重做
-- 删除区间跳过预览、项目自动保存与安全书签恢复
-- FCPXML、SRT、EDL JSON 一次导出
-- 全部 AI 能力在本机运行，不需要 API Key
+[下载软件与源码](https://github.com/Mooyumm/CodeCut/releases) · [完整使用指南](docs/USAGE.md) · [AI 接入模式与开发建议](docs/AI_INTEGRATION.md) · [功能细节](docs/FEATURE_DETAILS.md) · [发布记录](CodeCutMac/RELEASE_NOTES.md)
 
-逐词转写在本机通过 WhisperKit 完成，不需要联网，也不上传音视频。断句、口误与去重建议、分镜提示词等文本判断由本机 Qwen3-VL 8B（llama.cpp）完成，同样不联网、不上传任何素材。断句优先用文稿标点和真实停顿，不需要模型参与。云端 DeepSeek 接口已关闭，代码保留但不再被调用。
-成功转写会按素材路径、大小、修改时间和转写配置缓存；再次转写同一素材时直接恢复。项目原视频移动后，打开项目会引导重新定位。
+## 能做什么
 
-命令行验证：
+| 工作区 | 当前能力 |
+| --- | --- |
+| 文稿 | 导入产品 brief、参考图、口播稿与分镜表；支持 PDF、Word、PPT、图片及文本等格式 |
+| 口播 | WhisperKit 本地逐词转写、字幕校对、删词、气口处理、口误与重复内容审阅、撤销与重做 |
+| B-roll | 导入实拍素材、画面与产品识别、按产品归类、标记待确认物品、推荐素材区间 |
+| 分镜 | 表格编辑、CSV 导入导出、匹配口播时间、从素材库辅助选择 B-roll、生成制作提示词 |
+| 音乐参考 | 跨项目曲库、波形选段、批注、片段导出；可选本地音频分析与去人声 |
+| 交付 | MP4、SRT、FCPXML、EDL 等导出；项目自动保存与备份恢复 |
 
-```bash
-cd CodeCutMac
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
-```
+AI 生成的是待审阅建议。分镜提示词生成不等于自动生成视频；Web 页面是历史原型，完整功能在原生 Mac 应用中。
 
-## 1.0 使用顺序
+## 快速开始
 
-1. 在设置中确认本机模型已就绪（首次需要点“准备本地模型”下载一次），可以顺手“测试连接”。
-2. 导入视频；视频会自动成为一个项目并出现在左侧项目栏。
-3. 点击“转写”生成文字稿和字幕，或直接在文字稿区域输入内容。
-4. 在时间线上拖动播放头、入点和出点；使用字幕块进行选择、拆分、合并、删除和编辑。
-5. 导出 MP4、SRT、EDL 或 FCPXML；需要画面内字幕时开启“烧录字幕”。
+1. 从 [Releases](https://github.com/Mooyumm/CodeCut/releases) 下载 `CodeCut-macOS-arm64.zip`，解压后将应用放入「应用程序」。下载包是未公证的本地构建；若系统拒绝运行，可用 Xcode 从源码构建。
+2. 打开应用，在 AI 设置中点击「准备本地模型」，下载完成后点击「检查状态」和「测试连接」。首次转写还会准备 WhisperKit 模型。
+3. 导入视频，在「文稿」工作区放入口播稿和产品资料，在「口播」工作区点击「转写」。
+4. 校对文字稿，检查删词、气口与去重建议，试听剪辑结果。
+5. 按需导入 B-roll、编辑分镜，再导出 MP4 或 SRT / FCPXML / EDL。
 
-项目、文字稿、AI 对话和编辑决定均为项目级数据，并带备份恢复。模型权重放在 `~/Library/Application Support/CodeCut/`，不进 App 包。
+音乐分析、NCM 解码和去人声还需要单独配置外部运行环境，详见 [使用指南](docs/USAGE.md)。
 
-## 音乐参考库
+## 从源码运行
 
-音乐列表右键「删除音乐…」可将当前参考库中的音乐副本、关联片段音频和批注一起移到系统废纸篓，删除前确认名称、片段数量及目录。原始导入来源文件、其他曲目／版本不受影响；废纸篓内附有 `deleted-track.json` 供恢复记录。删除去人声版本后，对原曲再次去人声会重新生成。正在导入、导出、分离、生成或迁移时禁用删除。导入和删除都使用「设置」中的参考库目录；尚未指定项目文件夹时仍使用系统默认目录。
-
-原生版底部的「音乐参考」是跨视频项目保存的个人参考库：
-
-1. 导入或拖入 NCM、MP3、WAV、M4A、AIFF 等音频。NCM 自动调用本机 AudioForge 解码：内含 MP3 时保留原始音频，其他支持的格式使用 FFmpeg 转为 320 kbps MP3。导入会复制音频到参考库，原文件不变，移动原曲不影响使用。
-2. 空格播放／暂停，单击波形定位，按 I 设置入点、O 设置出点；可循环试听选区。编辑文字时这些按键不触发播放器。
-3. 点击「确认片段」一次保存一个片段，同时写出 `Clips/<ID>/audio.m4a` 与 `annotation.json`。按 I 开始下一段，可保存多个重叠片段。
-4. 左侧目录树统一整理音乐、片段与文件夹，整行（包括空白）均可点击选中，小箭头用于展开／收起。音乐和片段可拖到文件夹整行归档，文件夹可拖入其他文件夹形成多层级；拖到顶部「根目录」可移出。阻止移入自身／子目录及同名文件夹冲突。新建文件夹也可输入 `数码/思考`。片段右键菜单支持重命名、移到文件夹、删除记录（保留本地音频）。目录结构保存在索引中，音频采用稳定 ID 保存，不因拖放重复复制。
-5. 批注区只保留一个输入框，自动保存；旧版的声音、避免项会合并到批注中。点击「AI 分类并生成提示词」整理用途与音乐提示词；结果在下方折叠区域查看、复制。批注改变后会提醒重新生成；「更多」支持批量生成及本地 AI 设置。
-6. 「导出片段」输出裁好的 M4A、TXT 批注和 JSON。
-
-「读取音乐」使用 Essentia 从选中片段的音频计算 RMS 电平、帧电平差、频谱重心，并在不少于 10 秒时估计 BPM／调性；结果和范围一起保存。Essentia 支持 1–600 秒片段，短片段或近静音会跳过不可靠的估计。范围改变后旧读取结果失效，改批注无需重新读音频。「AI 分类并生成提示词」会先读取缺失的音频特征和 Qwen 描述，再让现有本地语言模型结合特征与批注整理。Essentia 的特征提取不等于乐器／人声／情绪识别；BPM、调性和强度是算法估计，不是确定真值或概率。提示词整理模型不直接接收音频，编曲建议不代表原曲实测。读取结果和 AI 结果分开展示，批注仍是一个输入框。
-
-Qwen2-Audio 接入：读取音乐会先计算 Essentia 特征，再调用独立 MLX 4-bit 音频模型生成中文声音描述。Qwen 实际读取所选片段的前 30 秒，界面明确标注覆盖范围；乐器、人声和情绪是模型推断，不是客观确认。生成提示词会自动补齐 Qwen 描述，并结合用户批注整理。运行时强制离线，不上传音频。每次分析使用独立子进程，完成、失败或取消后释放模型。
-
-Qwen 运行期间自动暂停本程序的去人声队列：当前分离子进程被取消，等待它退出释放资源后才加载 Qwen。Qwen 结束后恢复队列；分离引擎没有断点功能，因此被中断的一首会从头重算。取消、失败也会恢复队列。不会暂停其他软件或终止其他本地 AI 服务。
-
-独立环境：`~/Library/Application Support/CodeCut/Runtime/qwen-audio-env`；模型：同目录 `Qwen2-Audio-7B-Instruct-4bit`。MLX Audio 固定提交 `e66ad2ff4eb96ce1149000187b30370cbcd707aa`，模型固定提交 `c65570002626f41b4dc08b7b54f42f99f3e82e7f`。模型权重 6,562,540,479 字节，下载脚本 `CodeCutMac/scripts/download_qwen_audio.py` 校验 SHA256。运行 `CODECUT_TEST_QWEN_AUDIO=/绝对路径/音乐.mp3 swift test --filter musicReferenceQwenActualAudio` 可验证真实音频；普通测试使用模拟分离任务检查暂停和恢复，不加载大模型。
-
-本机 Qwen 依赖为 MLX 0.32.3、mlx-audio 0.5.8（上述提交）、Transformers 5.19.0；额外安装 `jinja2==3.1.6` 用于聊天模板。此环境不依赖 PyTorch 进行推理，Transformer 只负责离线处理器和分词；GPU 推理由 MLX/Metal 执行。不要把这些包装进 AudioForge 或 Essentia 环境。
-
-适配器使用模型官方 `WhisperFeatureExtractor`（Slaney mel）替代该固定 MLX 提交的手写 HTK mel 前端；并在进入无 padding mask 的 MLX 音频编码器之前裁去短片段的补零帧，按有效长度生成音频 token。此修改只在本程序分析子进程中绑定，不改第三方安装文件。M4/16GB 对 14 秒真实音乐的首轮修正后测试：全流程约 9.4 秒，Qwen 加载和推理约 7.4 秒，MLX 峰值约 7.2GB（非全系统内存，耗时随输入与系统负载变化）。
-
-Essentia 使用独立 Python 环境，不修改 AudioForge 的依赖。在本机安装：
+需要带 macOS SDK 与 Swift 6 工具链的 Xcode；项目构建目标是 macOS 15 和 arm64。
 
 ```sh
-/Users/m4/.audioforge/venv/bin/python3 -m venv '/Users/m4/Library/Application Support/CodeCut/Runtime/essentia-env'
-'/Users/m4/Library/Application Support/CodeCut/Runtime/essentia-env/bin/python3' -m pip install --only-binary=:all: 'essentia==2.1b6.dev1389'
+git clone https://github.com/Mooyumm/CodeCut.git
+cd CodeCut
+open CodeCutMac/CodeCut.xcodeproj
 ```
 
-其他账户需替换用户名路径；运行时按当前用户目录定位。音频由现有 FFmpeg 裁剪、重采样为单声道 44.1 kHz，仅在本地临时目录分析，结束后清理临时文件。无云端上传。依赖项目与许可见 [Essentia](https://github.com/MTG/essentia)，发布软件前应核对第三方许可要求。测试：`CODECUT_TEST_ESSENTIA=1 swift test --filter MusicReference`；设置 `CODECUT_TEST_FEATURE_AUDIO` 为真实音乐绝对路径可额外实测前 20 秒。
+在 Xcode 中选择 `CodeCut` scheme 和 `My Mac`，在 Signing & Capabilities 中选择自己的开发团队后运行。仓库里的开发团队配置不是可共享的签名凭据。`Package.swift` 用于核心逻辑测试，不是应用启动入口。
 
-去人声时底部显示任务曲名、阶段、已用时和模型分离的真实进度条／百分比。加载模型时显示不确定进度；百分比达到 100% 仅表示模型计算完成，仍会明确显示保存、验证阶段，实际入库成功后才提示完成。进度来自本地引擎日志，不按时间模拟；取消或失败不会继续推进进度。
+```sh
+# 原生测试
+cd CodeCutMac
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+cd ..
 
-播放器右上角「去人声」调用本机 AudioForge 的 BS-Roformer 模型处理整首音乐，输出独立的 320 kbps MP3 伴奏并切换试听。原曲、原片段与批注保留；伴奏可重新选段建档。重复点击原曲的按钮会复用已有伴奏，不重复处理。状态栏可取消，失败不会覆盖原音频，处理期间不能迁移参考库。需要 `~/.audioforge/venv/bin/audio-separator`、FFmpeg 和 `~/.audioforge/models/` 中的模型就绪；不自动安装或下载模型。分离可能有残留或音质变化。设置 `CODECUT_TEST_SEPARATION=1` 可运行真实本地模型的短音频集成测试。
+# 本地 Release 打包：先提交所有需要包含的源码修改
+bash CodeCutMac/scripts/package.sh
 
-NCM 转换复用已有 AudioForge.app 的 `ncm_decode_cli.py` 和 `ncm_decoder.py`，不联网、不启动分离模型。优先查找 `/Applications/AudioForge.app`、`~/Applications/AudioForge.app`，再查找本机原有的 `~/Documents/Codex/2026-08-23/gei-w/outputs/AudioForge.app`。Python 和 FFmpeg 优先使用 `~/.audioforge/venv/bin/`。组件缺失、文件损坏或转换失败会逐文件报错，其他文件继续导入。真实 NCM 集成测试可设置 `CODECUT_TEST_NCM=/absolute/path/sample.ncm`，测试仅使用临时参考库并检查原文件未改变。
-
-默认存储位置：`~/Library/Application Support/CodeCut/MusicReferences/`。在音乐参考页「设置 → 更改位置」选择项目文件夹，会在其中新建 `MusicReferences` 并复制整个参考库；切换成功后记住新位置，原目录保留备份、不再同步。不覆盖已有的目标文件夹。参考库独立于视频项目；`Audio/` 保存音乐、`Clips/` 保存新确认的片段音频与批注、`library.json` 保存索引，`library.backup.json` 保留上一份索引。旧片段的时间范围和原曲仍保留，可使用「导出片段」取得独立音频。读取损坏时尝试恢复备份；主档和备份都不可读时停止写入，避免覆盖。
-
-使用 `open -a /path/to/CodeCut.app --args --music-reference` 可直接进入音乐参考库，不恢复视频项目。界面验证可通过环境变量 `CODECUT_MUSIC_REFERENCE_ROOT` 指定独立测试库。运行专项测试：`cd CodeCutMac && swift test --filter MusicReference`；真实模型验证额外设置 `CODECUT_TEST_MUSIC_MODEL=1`。
-
-## 旧 Web 原型（保留）
-
-无需安装依赖：
-
-```bash
+# 可选：历史 Web 原型，另需 Node.js / Python 3
+npm test
 npm start
 ```
 
-浏览器打开 `http://localhost:5173`。当前版本跑通导入、字幕校对、口误取舍、删气口与 FCPXML 导出；字幕分析暂用可编辑演示结果，下一步把 `analyze()` 接到 Whisper 即可获得真实转写。
+原生打包结果位于 `dist/`。Web 原型运行在 `http://localhost:5173`，使用演示分析结果。开发机在 2026-10-11 完成 Release 编译、299 项 Swift 测试和 Web 时间线测试；真实模型、外部依赖和个人样例集成测试需另行配置，普通测试通过不代表这些环境已安装。
+
+## AI 与数据流
+
+- **语音识别**：WhisperKit / Core ML，在本机获得逐词时间戳。
+- **断句与时间对齐**：文稿标点、真实停顿与本地匹配算法，无需大模型。
+- **文本与视觉理解**：llama.cpp + Qwen3-VL，通过本机回环地址调用；默认 8B，代码也支持 4B 配置。
+- **音乐理解**：可选 Essentia 特征提取 + 独立 Qwen2-Audio / MLX 环境；去人声另依赖 AudioForge。
+- **云端模式**：当前关闭。源码保留 DeepSeek 适配代码，但没有启用云端配置界面。
+
+模型下载会访问外部下载源；模型准备好后的上述推理在本机执行。原始素材、个人项目、模型权重和钥匙串凭据不包含在仓库中。当前 llama.cpp 自动下载地址使用第三方代理，下载与模型路径详见 [AI 接入说明](docs/AI_INTEGRATION.md)。
+
+## 项目结构
+
+```text
+CodeCutMac/
+  CodeCut.xcodeproj/       原生应用工程
+  Sources/CodeCutMac/      界面、剪辑逻辑、导出与 AI 接入
+  Tests/CodeCutMacTests/   单元与可选集成测试
+  Vendor/                 本地 WhisperKit 依赖源码
+  scripts/                打包与模型下载脚本
+docs/                     使用与开发文档
+index.html / app.js        历史 Web 原型
+```
+
+## 当前限制与反馈
+
+当前未提供 Windows、Linux 或 Intel Mac 构建。未提供“一键安装所有音乐 AI 依赖”的安装器；音频分析、去人声、NCM 解码需要 README 和指南中列出的组件。模型推断可能出错，导出前应逐段试听并确认素材区间。跨机分发签名、公证流程见 [DISTRIBUTION.md](CodeCutMac/DISTRIBUTION.md)。
+
+可通过 [Issues](https://github.com/Mooyumm/CodeCut/issues) 反馈问题，附系统版本、芯片、复现步骤和脱敏日志；请不要上传私密素材或密钥。
+
+## 许可
+
+仓库公开不代表已授予任意再分发或商业使用许可：目前尚未为 CodeCut 自有代码指定统一开源许可证。第三方源码、模型和外部工具分别遵循各自许可；WhisperKit 的许可保留在 [Vendor/LICENSE](CodeCutMac/Vendor/argmax-oss-swift-1.1.0/LICENSE)。
